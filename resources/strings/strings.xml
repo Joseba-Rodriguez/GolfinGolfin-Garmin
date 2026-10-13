@@ -1,0 +1,8 @@
+<strings>
+    <string id="AppName">Golf Instinct</string>
+    <string id="GolfStrokes">Golpes de golf</string>
+    <string id="GolfPutts">Putts</string>
+    <string id="GolfPenalties">Penalizaciones</string>
+    <string id="GolfHoles">Hoyos terminados</string>
+    <string id="GolfCount">cantidad</string>
+</strings>

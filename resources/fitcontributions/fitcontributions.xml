@@ -1,0 +1,6 @@
+<fitContributions>
+    <fitField id="0" displayInActivitySummary="true" sortOrder="0" precision="0" dataLabel="@Strings.GolfStrokes" unitLabel="@Strings.GolfCount" />
+    <fitField id="1" displayInActivitySummary="true" sortOrder="1" precision="0" dataLabel="@Strings.GolfPutts" unitLabel="@Strings.GolfCount" />
+    <fitField id="2" displayInActivitySummary="true" sortOrder="2" precision="0" dataLabel="@Strings.GolfPenalties" unitLabel="@Strings.GolfCount" />
+    <fitField id="3" displayInActivitySummary="true" sortOrder="3" precision="0" dataLabel="@Strings.GolfHoles" unitLabel="@Strings.GolfCount" />
+</fitContributions>
