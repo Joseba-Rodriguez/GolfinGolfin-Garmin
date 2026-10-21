@@ -9,8 +9,9 @@ import Toybox.WatchUi;
 
 class GolfCourses {
     // jsDelivr sirve el repo publico con Content-Type application/json; raw.githubusercontent
-    // responde text/plain y Garmin Connect lo rechaza (-400) al pedir JSON.
-    const STATIC_DATA_BASE_URL = "https://cdn.jsdelivr.net/gh/Joseba-Rodriguez/GolfinGolfin-Garmin@main/data/osm/spain/";
+    // responde text/plain y Garmin Connect lo rechaza (-400) al pedir JSON. Fijado al commit
+    // de los datos (jsDelivr cachea @main hasta 12 h): al regenerar el catalogo, actualiza el hash.
+    const STATIC_DATA_BASE_URL = "https://cdn.jsdelivr.net/gh/Joseba-Rodriguez/GolfinGolfin-Garmin@ee717f733f265b9283f2fd136e426807330a9cd8/data/osm/spain/";
     const SEARCH_RADIUS_METERS = 20000;
     const SEARCH_RESULT_LIMIT = 12;
     var parser;
