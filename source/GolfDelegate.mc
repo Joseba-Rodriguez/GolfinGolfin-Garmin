@@ -17,7 +17,11 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
 
     function onSelect() {
         if (view.mode == :score || view.mode == :play || view.mode == :distance) {
+            var first = round.scores[round.hole] == 0;
             round.changeScore(1);
+            if (first && round.scores[round.hole] == 1) {
+                courses.learnTee(round.hole);
+            }
             persist();
         } else if (view.mode == :shot) {
             courses.markShot(round.hole);
@@ -437,6 +441,7 @@ class GolfHoleDelegate extends WatchUi.Menu2InputDelegate {
         if (identifier == :finishHole) {
             var result = controller.round.resultForHole(controller.round.hole);
             if (controller.round.finishHole()) {
+                controller.courses.learnGreen(controller.round.hole, controller.round.pars[controller.round.hole]);
                 if (result != null) {
                     controller.view.showCelebration(result, controller.round.hole + 1);
                 }

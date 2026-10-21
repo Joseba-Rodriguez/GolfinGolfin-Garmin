@@ -1,3 +1,5 @@
+import Toybox.Position;
+import Toybox.System;
 import Toybox.Application;
 import Toybox.Test;
 import Toybox.Lang;
@@ -546,5 +548,49 @@ function testNumberEditorBounds(logger) {
     var putting = new GolfNumberView("PUTTS", 0, 0, 0);
     putting.adjust(1);
     Test.assert(putting.value == 0);
+    return true;
+}
+(:test)
+function testFrontBackAndLooseGreensAreParsed(logger) {
+    var parser = new GolfCourseData();
+    var entry = { "tags" => { "golf" => "hole", "ref" => "1", "par" => "4" },
+        "geometry" => [{ "lat" => 40.4, "lon" => -3.7 }, { "lat" => 40.403, "lon" => -3.7 }],
+        "front" => { "lat" => 40.4029, "lon" => -3.7 }, "back" => { "lat" => 40.4031, "lon" => -3.7 } };
+    var hole = parser.holeForNumber({ "elements" => [entry] }, 1);
+    Test.assert(hole["flat"] == 40.4029 && hole["blat"] == 40.4031 && hole["tlat"] == 40.4);
+    var pinOnly = { "tags" => { "golf" => "hole", "ref" => "2" }, "geometry" => [{ "lat" => 40.41, "lon" => -3.7 }] };
+    hole = parser.holeForNumber({ "elements" => [pinOnly] }, 2);
+    Test.assert(hole != null && hole["lat"] == 40.41 && hole["tlat"] == null && hole["flat"] == null);
+    var greens = parser.looseGreens({ "greens" => [{ "lat" => 40.5, "lon" => -3.7 }, { "lat" => 99, "lon" => 0 }] });
+    Test.assert(greens.size() == 1);
+    return true;
+}
+
+(:test)
+function testCourseLearnsGreensAndTees(logger) {
+    var service = new GolfCourses();
+    var holes = [];
+    for (var index = 0; index < 18; index += 1) {
+        holes.add(null);
+    }
+    service.course = { "id" => "way/9", "name" => "Nuevo", "count" => 9, "source" => "osm", "holes" => holes,
+        "greens" => [{ "lat" => 40.4031, "lon" => -3.7 }, { "lat" => 40.5, "lon" => -3.7 }] };
+    service.favorites = [service.course];
+    Test.assert(service.targetLabel(0).equals("GREEN CERCANO"));
+    Test.assert(!service.learnTee(0) && !service.learnGreen(0, 4));
+    service.location = new Position.Location({ :latitude => 40.4, :longitude => -3.7, :format => :degrees });
+    service.fixTime = System.getTimer();
+    Test.assert(service.learnTee(0) && service.pendingTee["hole"] == 0);
+    service.location = new Position.Location({ :latitude => 40.403, :longitude => -3.7, :format => :degrees });
+    Test.assert(service.learnGreen(0, 4));
+    var learned = service.course["holes"][0];
+    Test.assert(learned["lat"] == 40.4031 && learned["tlat"] != null && learned["par"] == 4);
+    Test.assert(service.course["greens"].size() == 1 && service.learnedHoles() == 1);
+    Test.assert(service.targetLabel(0).equals("APRENDIDO") && service.parser.validCachedCourse(service.course));
+    var length = service.holeLength(0);
+    Test.assert(length >= 340 && length <= 350);
+    Test.assert(!service.learnGreen(0, 4));
+    service.location = new Position.Location({ :latitude => 40.45, :longitude => -3.7, :format => :degrees });
+    Test.assert(service.learnGreen(1, null) && service.course["holes"][1]["lat"] < 40.4501);
     return true;
 }

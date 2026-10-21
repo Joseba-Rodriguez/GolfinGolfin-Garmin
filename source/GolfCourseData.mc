@@ -94,6 +94,7 @@ class GolfCourseData {
                 !(entry["name"] instanceof Lang.String) || entry["name"].length() == 0 ||
                 entry["name"].length() > 64 || !validPoint(entry) ||
                 !(entry["holes"] instanceof Lang.Number) || entry["holes"] < 0 ||
+                (entry["greens"] != null && !(entry["greens"] instanceof Lang.Number)) ||
                 entry["holes"] > 18 || !(entry["count"] instanceof Lang.Number) ||
                 (entry["count"] != 9 && entry["count"] != 18) ||
                 !(entry["file"] instanceof Lang.String) ||
@@ -116,7 +117,8 @@ class GolfCourseData {
             }
             result.add({ "id" => entry["id"], "type" => entry["type"],
                 "name" => entry["name"], "lat" => entry["lat"], "lon" => entry["lon"],
-                "holes" => entry["holes"], "count" => entry["count"], "file" => entry["file"] });
+                "holes" => entry["holes"], "greens" => entry["greens"] == null ? 0 : entry["greens"],
+                "count" => entry["count"], "file" => entry["file"] });
         }
         return result;
     }
@@ -177,11 +179,11 @@ class GolfCourseData {
 
     function holeFromEntry(entry) {
         var geometry = entry["geometry"];
-        if (!(geometry instanceof Lang.Array) || geometry.size() < 2 ||
+        // Geometria [tee, centro green] o solo [centro green] cuando OSM tiene bandera/green sin linea.
+        if (!(geometry instanceof Lang.Array) || geometry.size() < 1 ||
             !validPoint(geometry[0]) || !validPoint(geometry[geometry.size() - 1])) {
             return null;
         }
-        var tee = geometry[0];
         var target = geometry[geometry.size() - 1];
         var tags = entry["tags"];
         var par = null;
@@ -192,8 +194,33 @@ class GolfCourseData {
                 par = parsedPar;
             }
         }
-        return { "lat" => target["lat"], "lon" => target["lon"], "par" => par,
-            "tlat" => tee["lat"], "tlon" => tee["lon"] };
+        var hole = { "lat" => target["lat"], "lon" => target["lon"], "par" => par };
+        if (geometry.size() > 1) {
+            hole["tlat"] = geometry[0]["lat"];
+            hole["tlon"] = geometry[0]["lon"];
+        }
+        if (validPoint(entry["front"]) && validPoint(entry["back"])) {
+            hole["flat"] = entry["front"]["lat"];
+            hole["flon"] = entry["front"]["lon"];
+            hole["blat"] = entry["back"]["lat"];
+            hole["blon"] = entry["back"]["lon"];
+        }
+        return hole;
+    }
+
+    // Greens sin numerar de la ficha; sirven para "green cercano" y para aprender el campo.
+    function looseGreens(data) {
+        var result = [];
+        if (!(data instanceof Lang.Dictionary) || !(data["greens"] instanceof Lang.Array)) {
+            return result;
+        }
+        for (var index = 0; index < data["greens"].size() && result.size() < 27; index += 1) {
+            var green = data["greens"][index];
+            if (validPoint(green)) {
+                result.add({ "lat" => green["lat"], "lon" => green["lon"] });
+            }
+        }
+        return result;
     }
 
     function holeNumbers(data) {
@@ -242,6 +269,17 @@ class GolfCourseData {
                 return false;
             }
             found = true;
+        }
+        var greens = course["greens"];
+        if (greens != null) {
+            if (!(greens instanceof Lang.Array) || greens.size() > 27) {
+                return false;
+            }
+            for (var index = 0; index < greens.size(); index += 1) {
+                if (!validPoint(greens[index])) {
+                    return false;
+                }
+            }
         }
         return found || (course["source"] instanceof Lang.String &&
             ((course["source"].equals("manual") && (course["count"] == 9 || course["count"] == 18)) ||

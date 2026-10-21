@@ -30,6 +30,12 @@ validado en un reloj fisico.
 - GPS local y distancia aproximada en metros al final del recorrido OSM del hoyo.
 - Version instalada consultable en **Mas opciones > Datos / privacidad**.
 - GPS automatico al cargar un campo; sin pasos de consentimiento intermedios.
+- Pantalla de juego nueva: distancia grande al centro del green, frente (triangulo abajo) y
+  fondo (triangulo arriba) cuando OSM dibuja el green, golpes del hoyo en la subpantalla
+  circular junto al boton GPS, total, resultado al par, barras de GPS y progreso de hoyos.
+- Campos sin hoyos en OSM: modo GREEN CERCANO si hay greens dibujados y aprendizaje automatico:
+  el primer golpe guarda el tee y Cerrar hoyo guarda el green (ajustado al green OSM cercano).
+  La siguiente vez que juegues ese campo desde Mis campos offline ya tendra distancias.
 - Historial de las ultimas 5 rondas con su tarjeta hoyo a hoyo (MENU > Historial).
 - Longitud de cada hoyo (tee a green) en la pantalla de juego.
 - Metros/yardas y medicion manual de la distancia recta de un golpe.
@@ -130,7 +136,10 @@ No hay importador de campos de Connect ni editor de coordenadas desde el movil.
 ## Campos publicos y limitaciones
 
 Fuente: extractos de **OpenStreetMap contributors**, bajo **ODbL 1.0**.
-El generador crea mosaicos geograficos pequenos y una ficha JSON por campo. La
+El generador crea mosaicos geograficos pequenos y una ficha JSON por campo. Usa campos
+cerrados y multipoligonos, lineas golf=hole numeradas (con tolerancia de 150 m al limite),
+banderas, greens y tees numerados, y contornos de green para frente/centro/fondo.
+Para regenerar sin volver a filtrar los PBF: node scripts/build-osm-catalog.mjs --geojson a.geojson,b.geojson --output data/osm/spain La
 app obtiene estos archivos de jsDelivr (`cdn.jsdelivr.net/gh/...@main`), que sirve este repositorio
 publico con `Content-Type: application/json`. GitHub Raw responde `text/plain` y
 Garmin Connect rechaza esa respuesta (error -400). La app no consulta Overpass ni necesita una

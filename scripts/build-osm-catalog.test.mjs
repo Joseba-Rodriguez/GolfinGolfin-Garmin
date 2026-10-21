@@ -60,3 +60,32 @@ test("does not attach a hole outside the course boundary or accept unnumbered ho
     assert.equal(mappedHoleCount, 0);
     assert.equal(outputs.get("courses/way_10.json").elements.length, 0);
 });
+
+test("reads osmium multipolygon courses and adds green front/back and numbered pins", () => {
+    const relationCourse = structuredClone(course);
+    relationCourse.properties["@id"] = "a61";
+    const green = {
+        type: "Feature",
+        properties: { "@id": "w30", golf: "green" },
+        geometry: { type: "LineString", coordinates: [
+            [-4.0022, 40.0178], [-4.0018, 40.0178], [-4.0018, 40.0182], [-4.0022, 40.0182], [-4.0022, 40.0178]
+        ] }
+    };
+    const pin = {
+        type: "Feature",
+        properties: { "@id": "n40", golf: "pin", ref: "3" },
+        geometry: { type: "Point", coordinates: [-4.008, 40.02] }
+    };
+    const loose = structuredClone(green);
+    loose.properties["@id"] = "w31";
+    loose.geometry.coordinates = loose.geometry.coordinates.map(([lon, lat]) => [lon + 0.005, lat + 0.005]);
+    const { outputs, mappedHoleCount } = buildCatalog([relationCourse, hole, green, pin, loose]);
+    const detail = outputs.get("courses/relation_30.json");
+    assert.equal(mappedHoleCount, 2);
+    const ten = detail.elements.find((element) => element.tags.ref === "10");
+    assert.equal(ten.geometry.length, 2);
+    assert.ok(ten.front.lat < ten.geometry[1].lat && ten.back.lat > ten.geometry[1].lat);
+    const three = detail.elements.find((element) => element.tags.ref === "3");
+    assert.deepEqual(three.geometry, [{ lat: 40.02, lon: -4.008 }]);
+    assert.equal(detail.greens.length, 1);
+});

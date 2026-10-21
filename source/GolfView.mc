@@ -105,67 +105,129 @@ class GolfView extends WatchUi.View {
         drawFitted(dc, center, 130, footer, 138);
     }
 
+    // Pantalla de juego para 166x166 monocromo. La subpantalla circular (arriba a la derecha,
+    // junto al boton GPS) muestra los golpes del hoyo: ese boton suma uno.
     function drawPlayScreen(dc, center) {
         var holeNumber = round.hole + 1;
         var par = round.pars[round.hole];
-        dc.drawText(center - 58, 23, Graphics.FONT_XTINY,
-            "HOYO " + holeNumber.toString() + "/" + round.holeCount.toString(), Graphics.TEXT_JUSTIFY_LEFT);
-        var parCenter = center + 58;
-        var parText = par == null ? "PAR --" : "PAR " + par.toString();
-        dc.drawText(parCenter, 17, Graphics.FONT_XTINY, parText, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(12, 0, Graphics.FONT_SMALL, "HOYO " + holeNumber.toString(), Graphics.TEXT_JUSTIFY_LEFT);
+        var length = courses.holeLength(round.hole);
+        var info = (par == null ? "PAR -" : "PAR " + par.toString()) +
+            (length == null ? "" : "  " + courses.displayDistance(length).toString() + courses.unitLabel());
+        dc.drawText(12, 21, Graphics.FONT_XTINY, info, Graphics.TEXT_JUSTIFY_LEFT);
+        drawGpsBars(dc, 92, 17);
+        drawSubscreen(dc);
+        dc.drawLine(8, 42, 108, 42);
 
+        if (courses.course == null) {
+            dc.drawText(center, 52, Graphics.FONT_MEDIUM, "SIN CAMPO", Graphics.TEXT_JUSTIFY_CENTER);
+            drawFitted(dc, center, 78, courses.busy ? courses.status :
+                courses.error != null ? courses.error : "MENU > Buscar campo", 140);
+        } else {
+            drawDistances(dc, center);
+        }
+
+        dc.drawLine(8, 112, 158, 112);
+        var relative = round.relativeScore();
+        dc.drawText(42, 112, Graphics.FONT_XTINY, "TOTAL", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(42, 125, Graphics.FONT_NUMBER_MILD, round.total().toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(124, 112, Graphics.FONT_XTINY, "AL PAR", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(124, 125, Graphics.FONT_NUMBER_MILD, relative == null ? "-" :
+            relative == 0 ? "E" : (relative > 0 ? "+" : "") + relative.toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        if (recording.active) {
+            dc.fillCircle(center, 136, 3);
+        }
+        drawProgress(dc, center, 157);
+    }
+
+    function drawSubscreen(dc) {
+        var x = 139;
+        var y = 26;
+        dc.drawCircle(x, y, 23);
+        dc.drawText(x, y - 1, Graphics.FONT_NUMBER_MEDIUM, round.scores[round.hole].toString(),
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+    }
+
+    // Distancia grande al centro; a la derecha fondo (triangulo arriba) y frente (triangulo abajo).
+    function drawDistances(dc, center) {
         var target = courses.currentHole(round.hole);
-        var distance = courses.distance(round.hole);
+        var distance = target != null ? courses.distance(round.hole) : courses.nearestGreenDistance();
+        var frontBack = courses.frontBack(round.hole);
         var status = null;
         if (courses.busy) {
             status = courses.status;
         } else if (courses.error != null) {
             status = courses.error;
-        } else if (courses.course == null) {
-            status = "MENU > CAMPOS";
-        } else if (target == null) {
-            status = "Este hoyo no tiene datos";
         } else if (!courses.gpsEnabled) {
-            status = "Activa el GPS en el menu";
+            status = "GPS apagado (MENU)";
         } else if (!courses.hasFix()) {
-            status = "Esperando senal GPS";
+            status = "Buscando GPS...";
         } else if (distance != null && distance > 9999) {
-            status = "GPS fuera del campo";
+            status = "Fuera del campo";
+        } else if (target == null && courses.looseGreens().size() == 0) {
+            status = "Cierra hoyo en green";
         }
+        var hasSides = frontBack != null && frontBack[0] != null && frontBack[1] != null &&
+            frontBack[1] <= 9999;
+        var mainX = hasSides ? 62 : center;
+        var text = distance == null || distance > 9999 ? "--" : courses.displayDistance(distance).toString();
+        var font = Graphics.FONT_NUMBER_THAI_HOT;
+        if (dc.getTextWidthInPixels(text, font) > (hasSides ? 108 : 150)) {
+            font = Graphics.FONT_NUMBER_HOT;
+        }
+        dc.drawText(mainX, 72, font, text, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        if (hasSides) {
+            dc.drawLine(116, 56, 116, 102);
+            drawTriangle(dc, 125, 66, true);
+            dc.drawText(157, 66, Graphics.FONT_SMALL, courses.displayDistance(frontBack[1]).toString(),
+                Graphics.TEXT_JUSTIFY_RIGHT | Graphics.TEXT_JUSTIFY_VCENTER);
+            drawTriangle(dc, 125, 92, false);
+            dc.drawText(157, 92, Graphics.FONT_SMALL, courses.displayDistance(frontBack[0]).toString(),
+                Graphics.TEXT_JUSTIFY_RIGHT | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
+        var caption = status != null ? status : courses.targetLabel(round.hole) + " " + courses.unitLabel();
+        drawFitted(dc, mainX, 95, caption, hasSides ? 110 : 140);
+    }
 
-        if (courses.course == null || target == null) {
-            var emptyTitle = courses.course == null ? "SIN CAMPO" : "HOYO SIN DATOS";
-            dc.drawText(center, 60, Graphics.FONT_MEDIUM, emptyTitle, Graphics.TEXT_JUSTIFY_CENTER);
-            drawFitted(dc, center, 83, status, 124);
+    function drawTriangle(dc, x, y, up) {
+        if (up) {
+            dc.fillPolygon([[x - 5, y + 4], [x + 5, y + 4], [x, y - 4]]);
         } else {
-            drawFitted(dc, center, 44, courses.targetLabel(round.hole) + "AL GREEN", 112);
-            if (distance == null || distance > 9999) {
-                dc.drawText(center, 54, Graphics.FONT_NUMBER_HOT, "--", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.fillPolygon([[x - 5, y - 4], [x + 5, y - 4], [x, y + 4]]);
+        }
+    }
+
+    // Tres barras: llenas con fix fiable, contorno buscando, tachadas con GPS apagado.
+    function drawGpsBars(dc, x, bottom) {
+        for (var bar = 0; bar < 3; bar += 1) {
+            var height = 4 + bar * 3;
+            var left = x + bar * 4;
+            if (courses.hasFix()) {
+                dc.fillRectangle(left, bottom - height, 3, height);
             } else {
-                var distanceText = courses.displayDistance(distance).toString();
-                var distanceFont = Graphics.FONT_NUMBER_HOT;
-                if (dc.getTextWidthInPixels(distanceText, distanceFont) > 132) {
-                    distanceFont = Graphics.FONT_NUMBER_MILD;
-                }
-                dc.drawText(center, 54, distanceFont, distanceText, Graphics.TEXT_JUSTIFY_CENTER);
-            }
-            dc.drawText(center, 89, Graphics.FONT_XTINY, courses.unitLabel(), Graphics.TEXT_JUSTIFY_CENTER);
-            if (status != null) {
-                drawFitted(dc, center, 100, status, 128);
-            } else {
-                var length = courses.holeLength(round.hole);
-                drawFitted(dc, center, 100, length == null ? "DISTANCIA APROXIMADA" :
-                    "HOYO " + courses.displayDistance(length).toString() + " " + courses.unitLabel(), 128);
+                dc.drawRectangle(left, bottom - height, 3, height);
             }
         }
+        if (!courses.gpsEnabled) {
+            dc.drawLine(x - 1, bottom - 11, x + 11, bottom + 1);
+        }
+    }
 
-        dc.drawLine(center - 52, 112, center + 52, 112);
-        dc.drawText(center / 2, 118, Graphics.FONT_XTINY, "GOLPES", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(center + center / 2, 118, Graphics.FONT_XTINY, "TOTAL", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(center / 2, 136, Graphics.FONT_NUMBER_MILD, round.scores[round.hole].toString(),
-            Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(center + center / 2, 136, Graphics.FONT_NUMBER_MILD, round.total().toString(),
-            Graphics.TEXT_JUSTIFY_CENTER);
+    // Un punto por hoyo: lleno terminado, anillo el actual, punto pequeno pendiente.
+    function drawProgress(dc, center, y) {
+        var count = round.holeCount;
+        var spacing = count > 9 ? 6 : 11;
+        var start = center - (count - 1) * spacing / 2;
+        for (var index = 0; index < count; index += 1) {
+            var x = start + index * spacing;
+            if (index == round.hole) {
+                dc.drawCircle(x, y, 3);
+            } else if (round.completed[index]) {
+                dc.fillCircle(x, y, 2);
+            } else {
+                dc.drawPoint(x, y);
+            }
+        }
     }
 
     function drawCelebration(dc, center) {

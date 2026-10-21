@@ -42,6 +42,8 @@ class GolfCourses {
     var catalogTiles = [];
     var catalogTileIndex = 0;
     var catalogCandidates = [];
+    var pendingTee = null;
+    const LEARN_GREEN_RADIUS = 45;
 
     function initialize() {
         parser = new GolfCourseData();
@@ -241,7 +243,7 @@ class GolfCourses {
         }
         draft = { "id" => selectedCourse["id"], "type" => selectedCourse["type"], "source" => "osm",
             "name" => selectedCourse["name"], "count" => selectedCourse["count"],
-            "holes" => [] };
+            "holes" => [], "greens" => [] };
         replacementFavorite = replacementIndex;
         for (var index = 0; index < 18; index += 1) {
             draft["holes"].add(null);
@@ -336,6 +338,7 @@ class GolfCourses {
                 fail("Ficha OSM invalida");
                 return;
             }
+            draft["greens"] = parser.looseGreens(data);
             numbers = parser.holeNumbers(data);
             if (numbers.size() == 0 && data["elements"].size() > 0) {
                 fail("Ficha sin hoyos validos");
@@ -399,12 +402,20 @@ class GolfCourses {
             var distance = nearby[index]["distance"];
             var distanceLabel = distance < 1000 ? distance.toString() + " m" :
                 Math.round(distance.toDouble() / 1000.0).toString() + " km";
-            var mapped = nearby[index]["holes"];
-            var courseLabel = mapped == 0 ? "sin hoyos GPS" : mapped.toString() + " hoyos GPS";
+            var courseLabel = dataLabel(nearby[index]);
             menu.addItem(new WatchUi.MenuItem(nearby[index]["name"],
                 distanceLabel + " / " + courseLabel, index, null));
         }
         WatchUi.pushView(menu, new GolfCourseMenuDelegate(self), WatchUi.SLIDE_UP);
+    }
+
+    function dataLabel(candidate) {
+        var mapped = candidate["holes"];
+        if (mapped > 0) {
+            return mapped.toString() + "/" + candidate["count"].toString() + " hoyos GPS";
+        }
+        return candidate["greens"] instanceof Lang.Number && candidate["greens"] > 0 ?
+            candidate["greens"].toString() + " greens" : "aprende al jugar";
     }
 
     function favoriteIndex(name) {
@@ -507,6 +518,7 @@ class GolfCourses {
         stopGps();
         course = null;
         shotStart = null;
+        pendingTee = null;
         nearby = [];
         searchTime = null;
         status = "Sin campo";
@@ -520,13 +532,120 @@ class GolfCourses {
         return course["holes"][holeIndex];
     }
 
-    function distance(holeIndex) {
-        var target = currentHole(holeIndex);
-        if (!hasFix() || target == null) {
+    function here() {
+        if (!hasFix()) {
             return null;
         }
         var coordinates = location.toDegrees();
-        return parser.distanceMeters({ "lat" => coordinates[0], "lon" => coordinates[1] }, target);
+        return { "lat" => coordinates[0], "lon" => coordinates[1] };
+    }
+
+    function distance(holeIndex) {
+        var target = currentHole(holeIndex);
+        var position = here();
+        if (position == null || target == null) {
+            return null;
+        }
+        return parser.distanceMeters(position, target);
+    }
+
+    // Distancias a frente y fondo del green cuando OSM dibuja su contorno.
+    function frontBack(holeIndex) {
+        var target = currentHole(holeIndex);
+        var position = here();
+        if (position == null || target == null || target["flat"] == null || target["blat"] == null) {
+            return null;
+        }
+        return [parser.distanceMeters(position, { "lat" => target["flat"], "lon" => target["flon"] }),
+            parser.distanceMeters(position, { "lat" => target["blat"], "lon" => target["blon"] })];
+    }
+
+    function looseGreens() {
+        return course == null || !(course["greens"] instanceof Lang.Array) ? [] : course["greens"];
+    }
+
+    // Indice del green sin numerar mas cercano a la posicion, o null.
+    function nearestGreenIndex(position, maxMeters) {
+        var greens = looseGreens();
+        var best = null;
+        var bestDistance = maxMeters;
+        for (var index = 0; position != null && index < greens.size(); index += 1) {
+            var meters = parser.distanceMeters(position, greens[index]);
+            if (meters != null && meters <= bestDistance) {
+                best = index;
+                bestDistance = meters;
+            }
+        }
+        return best;
+    }
+
+    function nearestGreenDistance() {
+        var position = here();
+        var index = nearestGreenIndex(position, 9999);
+        return index == null ? null : parser.distanceMeters(position, looseGreens()[index]);
+    }
+
+    // Primer golpe de un hoyo sin tee: la posicion actual es el tee.
+    function learnTee(holeIndex) {
+        var position = here();
+        var target = currentHole(holeIndex);
+        if (course == null || position == null || (target != null && target["tlat"] != null)) {
+            return false;
+        }
+        if (target != null) {
+            target["tlat"] = position["lat"];
+            target["tlon"] = position["lon"];
+            syncFavorite();
+        } else {
+            pendingTee = { "hole" => holeIndex, "lat" => position["lat"], "lon" => position["lon"] };
+        }
+        return true;
+    }
+
+    // Al cerrar un hoyo sin datos estas en el green: se guarda (ajustado al green OSM mas cercano).
+    function learnGreen(holeIndex, par) {
+        var position = here();
+        if (course == null || position == null || holeIndex < 0 || holeIndex >= course["count"] ||
+            currentHole(holeIndex) != null) {
+            return false;
+        }
+        var hole = { "lat" => position["lat"], "lon" => position["lon"], "par" => par, "source" => "learned" };
+        var greenIndex = nearestGreenIndex(position, LEARN_GREEN_RADIUS);
+        if (greenIndex != null) {
+            var green = looseGreens()[greenIndex];
+            hole["lat"] = green["lat"];
+            hole["lon"] = green["lon"];
+            course["greens"].remove(green);
+        }
+        if (pendingTee != null && pendingTee["hole"] == holeIndex) {
+            var length = parser.distanceMeters(pendingTee, hole);
+            if (length != null && length < 700) {
+                hole["tlat"] = pendingTee["lat"];
+                hole["tlon"] = pendingTee["lon"];
+            }
+        }
+        pendingTee = null;
+        course["holes"][holeIndex] = hole;
+        syncFavorite();
+        return true;
+    }
+
+    function syncFavorite() {
+        var position = favoriteCourseIndex(course);
+        if (position != null) {
+            favorites[position] = course;
+        }
+    }
+
+    function learnedHoles() {
+        var count = 0;
+        for (var index = 0; course != null && index < course["count"]; index += 1) {
+            var hole = course["holes"][index];
+            if (hole != null && hole["source"] instanceof Lang.String && hole["source"].equals("learned")) {
+                count += 1;
+            }
+        }
+        return count;
     }
 
     // Longitud aproximada tee -> green segun la linea OSM del hoyo.
@@ -700,14 +819,20 @@ class GolfCourses {
         var coordinates = location.toDegrees();
         course["holes"][round.hole] = { "lat" => coordinates[0], "lon" => coordinates[1],
             "par" => round.pars[round.hole], "source" => "manual" };
+        syncFavorite();
         error = null;
         return true;
     }
 
     function targetLabel(holeIndex) {
         var target = currentHole(holeIndex);
-        return target != null && target["source"] instanceof Lang.String && target["source"].equals("manual") ?
-            "GREEN GPS " : "OSM APROX ";
+        if (target == null) {
+            return looseGreens().size() > 0 ? "GREEN CERCANO" : "APRENDIENDO";
+        }
+        if (target["source"] instanceof Lang.String) {
+            return target["source"].equals("learned") ? "APRENDIDO" : "GREEN GPS";
+        }
+        return target["flat"] != null ? "CENTRO" : "GREEN";
     }
 }
 
@@ -757,8 +882,7 @@ class GolfCourseMenuDelegate extends WatchUi.Menu2InputDelegate {
         var distance = selectedCourse["distance"];
         var distanceLabel = distance < 1000 ? distance.toString() + " m" :
             Math.round(distance.toDouble() / 1000.0).toString() + " km";
-        var mapped = selectedCourse["holes"] == 0 ? "sin GPS" :
-            selectedCourse["holes"].toString() + " hoyos GPS";
+        var mapped = service.dataLabel(selectedCourse);
         menu.addItem(new WatchUi.MenuItem("Guardar offline y jugar",
             distanceLabel + " / " + mapped, :download, null));
         menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
