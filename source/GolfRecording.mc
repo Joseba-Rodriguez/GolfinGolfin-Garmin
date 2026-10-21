@@ -28,7 +28,7 @@ class GolfRecording {
                     courses.error = "Golf FIT no disponible";
                     return false;
                 }
-                session = ActivityRecording.createSession({ :name => "Golf Instinct",
+                session = ActivityRecording.createSession({ :name => "Golfin Golfin",
                     :sport => ActivityRecording.SPORT_GOLF, :subSport => ActivityRecording.SUB_SPORT_GENERIC });
                 fields = [];
                 var names = ["Golf strokes", "Golf putts", "Golf penalties", "Golf holes"];

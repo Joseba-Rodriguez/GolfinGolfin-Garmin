@@ -1,30 +1,37 @@
-# Golf Instinct: Garmin Instinct E 40 mm
+# Golfin Golfin: Garmin Instinct E 40 mm
 
 Proyecto inicial de una aplicacion de reloj Connect IQ, escrita en Monkey C.
 Dispositivo objetivo: **Instinct E 40 mm**, identificador `instincte40mm`.
 Garmin confirma Watch App, pantalla monocroma de 166 x 166 y manejo por botones.
 No es el Instinct original, el Instinct 2S ni el Instinct E de 45 mm.
 
-**Estado: NO verificada para publicacion.** El codigo tiene comprobaciones
-estructurales, pero no se ha compilado ni ejecutado en el simulador. En este
-equipo falta el SDK, el Java activo es 8 y la red ha bloqueado las consultas
-de descarga de herramientas y la consulta de datos reales. No hay un `.iq`
-validado para subir. No confundas ausencia de diagnosticos con pruebas pasadas.
+**Estado: compilada y verificada en el simulador Connect IQ** para Instinct E
+40 mm. La busqueda de campos usa un catalogo estatico generado desde los
+extractos publicos de OpenStreetMap para Espana y Canarias; ya no depende de
+consultas Overpass en el reloj. La cobertura es unicamente la que este
+delimitada y numerada en OSM. El catalogo local debe publicarse en la rama
+`main` de GitHub antes de que la descarga funcione desde el reloj. No se ha
+validado en un reloj fisico.
 
 ## Que incluye
 
 - Pantalla de juego con hoyo, par, distancia, golpes y control + asociado al boton GPS.
+- Pantalla principal reorganizada para mostrar hoyo/par, distancia al green, estado GPS y golpes/total de un vistazo.
 - Contador de golpes, tarjeta editable y total de la vuelta para hasta 18 hoyos.
 - Putts, penalizaciones y resultado respecto al par de los hoyos terminados.
+- Celebracion animada al cerrar un hoyo: pajaro para birdie/eagle, pelota para par y nube para bogey.
 - Correccion de golpes, navegacion entre hoyos y resumen.
 - Guardado automatico local: al salir y volver a abrir se recupera la vuelta.
 - Nueva vuelta con confirmacion antes de borrar los datos.
-- Busqueda de hasta 12 campos OSM en un radio de 20 km, solicitada por el usuario.
-- Descarga secuencial de los hoyos numerados del campo seleccionado y par si existe.
+- Busqueda de hasta 12 campos del catalogo OSM en un radio de 20 km.
+- Descarga de una ficha compacta por campo, con hoyos, par y geometria disponible.
 - Campo actual y biblioteca propia de hasta tres campos offline.
 - Tarjetas manuales de 9/18 hoyos y marcado GPS de un punto del green.
 - GPS local y distancia aproximada en metros al final del recorrido OSM del hoyo.
-- Consentimiento antes de activar GPS o enviar la ubicacion a Overpass.
+- Version instalada consultable en **Mas opciones > Datos / privacidad**.
+- GPS automatico al cargar un campo; sin pasos de consentimiento intermedios.
+- Historial de las ultimas 5 rondas con su tarjeta hoyo a hoyo (MENU > Historial).
+- Longitud de cada hoyo (tee a green) en la pantalla de juego.
 - Metros/yardas y medicion manual de la distancia recta de un golpe.
 - Inicio, pausa, reanudacion, guardado y descarte de actividad FIT de golf.
 - Campos FIT de resumen: golpes, putts, penalizaciones y hoyos terminados.
@@ -35,13 +42,13 @@ de Garmin Golf. No accede al catalogo de Garmin ni a los campos que guardas en
 Garmin Connect. La grabacion FIT se implementa con la API oficial ActivityRecording;
 su creacion, guardado y sincronizacion concreta aun requieren validacion.
 La descarga requiere telefono vinculado, Garmin Connect con acceso a Internet
-y Bluetooth. Los datos descargados y el contador funcionan sin red; para mostrar
+y Bluetooth. Los campos guardados y el contador funcionan sin red; para mostrar
 distancias hay que activar GPS y obtener una posicion fiable.
 
 ## Alcance real frente a un Approach
 
 Esto es una Watch App independiente, no una sustitucion del firmware. Al
-instalarla, se busca **Golf Instinct** en las aplicaciones/actividades del reloj;
+instalarla, se busca **Golfin Golfin** en las aplicaciones/actividades del reloj;
 no crea ni modifica el perfil de golf nativo. Declarar SPORT_GOLF en FIT no
 habilita automaticamente funciones de un Garmin Approach.
 
@@ -60,7 +67,7 @@ de forma fiable sin inventar informacion.
 
 ## Flujo de juego
 
-El menu principal tiene seis accesos: **Anotar hoyo**, **Tarjeta**, **Medir golpe**,
+El menu principal incluye **Anotar hoyo**, **Tarjeta**, **Finalizar vuelta**, **Medir golpe**,
 **Actividad**, **Campos** y **Mas opciones**. Los campos se gestionan en **Campos**;
 estadisticas, GPS, unidades, privacidad y vistas secundarias estan en **Mas opciones**.
 No hay que recorrer todas las funciones avanzadas para anotar un golpe.
@@ -76,11 +83,14 @@ UP aumenta, DOWN disminuye, GPS confirma y BACK cancela sin guardar cambios.
 No hace falta volver a abrir el menu por cada unidad. Al iniciar o reanudar la
 grabacion se vuelve a Jugar; al guardar se muestra el resumen de la vuelta.
 
-1. Descarga un campo OSM o crea **Campo manual 9/18 hoyos**. El cambio requiere
-   confirmacion, borra la tarjeta actual y se bloquea durante una actividad FIT.
-2. Usa **Guardar campo offline** y **Mis campos offline** para reutilizarlo.
-   La biblioteca admite tres campos por el limite de memoria del reloj. Un campo
-   con el mismo nombre sustituye la entrada anterior; no hay teclado para renombrar.
+1. En **Buscar campos**, selecciona el campo y elige **Guardar offline y jugar**.
+   Al terminar la descarga se guarda automaticamente en **Mis campos offline** y
+   se activa una tarjeta nueva. Si la biblioteca ya tiene tres campos, elige cual
+   reemplazar o cancela; los campos guardados se pueden cargar desde **Campos >
+   Mis campos offline > Cargar en partida**. Tambien puedes crear un campo manual
+   de 9 o 18 hoyos.
+2. La biblioteca conserva hasta tres campos por el limite de memoria del reloj.
+   Volver a descargar un campo con el mismo nombre actualiza su copia offline.
 3. En **Actividad**, acepta **Iniciar GPS + FIT**. El aviso autoriza grabar datos
    de GPS para sincronizarlos con Connect. Espera un fix fiable para las distancias.
 4. En **Jugar** ves hoyo, PAR, distancia y golpes. El + de la subpantalla indica
@@ -92,14 +102,20 @@ grabacion se vuelve a Jugar; al guardar se muestra el resumen de la vuelta.
 6. **Cerrar hoyo** lo marca terminado y avanza; no cierra un hoyo con cero golpes.
    En **Tarjeta** puedes seleccionar cualquier hoyo y corregirlo. Modificar golpes
    reabre el hoyo para que confirmes de nuevo su finalizacion.
-7. **Estado / campo** muestra resultado respecto al par, putts, penalizaciones,
+7. Para terminar la tarjeta, abre MENU > **Finalizar vuelta** y confirma. La app
+   cierra el hoyo actual si tiene golpes, guarda y bloquea la tarjeta y muestra el
+   total, hoyos cerrados y resultado respecto al par cuando hay datos. Para empezar
+   de nuevo, selecciona **Nueva vuelta**: conserva el campo y sus pares, y reinicia
+   golpes, putts y penalizaciones. Si hay un FIT abierto, primero guarda o descarta
+   esa actividad.
+8. **Estado / campo** muestra resultado respecto al par, putts, penalizaciones,
    hoyos terminados y coordenadas actuales cuando hay GPS fiable. No se inventa
    el par ausente: el resultado respecto al par queda sin datos si falta en algun
    hoyo terminado. No hay deteccion automatica de que hayas cambiado de hoyo.
-8. **Medir golpe**: pulsa GPS en esa pantalla para marcar el origen y camina hasta
+9. **Medir golpe**: pulsa GPS en esa pantalla para marcar el origen y camina hasta
    la bola. Mide distancia recta, no trayectoria ni carry. No suma golpes solo.
    La marca no se reutiliza en otro hoyo y desaparece al cambiar de campo.
-9. **Finalizar y guardar** termina el FIT; despues Garmin Connect lo sincroniza
+10. **Finalizar y guardar** termina el FIT; despues Garmin Connect lo sincroniza
    por el procedimiento normal del reloj. **Descartar FIT** no borra la tarjeta
    local. BACK durante una grabacion abre el menu de actividad en vez de salir.
    Si el sistema fuerza la salida normal, se intenta guardar automaticamente;
@@ -113,32 +129,36 @@ No hay importador de campos de Connect ni editor de coordenadas desde el movil.
 
 ## Campos publicos y limitaciones
 
-Fuente: **OpenStreetMap contributors**, bajo **ODbL 1.0**.
-API publica sin clave: <https://overpass.private.coffee/api/interpreter>.
-La politica del servicio figura en <https://wiki.openstreetmap.org/wiki/Overpass_API>.
-No es una API oficial de golf de Garmin y no tiene disponibilidad garantizada.
-Para una distribucion a gran escala debes acordar capacidad con el proveedor.
+Fuente: extractos de **OpenStreetMap contributors**, bajo **ODbL 1.0**.
+El generador crea mosaicos geograficos pequenos y una ficha JSON por campo. La
+app obtiene estos archivos de jsDelivr (`cdn.jsdelivr.net/gh/...@main`), que sirve este repositorio
+publico con `Content-Type: application/json`. GitHub Raw responde `text/plain` y
+Garmin Connect rechaza esa respuesta (error -400). La app no consulta Overpass ni necesita una
+clave de API. Los archivos generados deben estar publicados en la rama `main`
+para que el reloj pueda leerlos. La distribucion de datos OSM mantiene la
+atribucion y licencia; consulta <https://www.openstreetmap.org/copyright>.
 
-Desde MENU elige **Buscar campos**, acepta enviar tu ubicacion y espera el GPS.
-Selecciona el campo; confirma el cambio y espera que termine la descarga.
-Solo al completarse se sustituye el campo guardado y se borra la vuelta previa.
-Usa **Distancia OSM** para ver metros aproximados y **Puntuacion** para anotar golpes.
-Al volver a abrir, el campo sigue guardado, pero GPS no se activa automaticamente.
-Usa **Activar GPS**; **Apagar GPS** detiene el sensor sin borrar los datos.
+Desde MENU elige **Buscar campo cercano** y espera un fix GPS. La app
+solicita los mosaicos de un grado alrededor de la posicion, filtra los campos a
+20 km y muestra hasta 12 por distancia. La posicion exacta no se incluye en la
+solicitud: el proveedor puede ver la IP y el mosaico geografico consultado.
+Selecciona un campo, revisa cuantos hoyos tienen GPS y elige **Guardar offline
+y jugar**. Se descarga una sola ficha compacta; solo cuando termina se guarda
+el campo en **Mis campos offline** y se inicia una tarjeta nueva. Despues puedes
+anotar sin cobertura. El GPS se activa aparte para calcular distancias.
 
-La busqueda se limita a una consulta nueva cada cinco minutos mientras la app
-esta abierta. No hace consultas periodicas ni reintentos automaticos.
-Descarga primero la numeracion y despues cada hoyo individual para evitar
-respuestas de geometria grandes en un reloj con 128 KiB para Watch App.
-El limite real de memoria todavia debe medirse con el simulador del dispositivo.
+El catalogo se construye localmente con el extracto de Geofabrik para Espana y
+el extracto separado de Canarias. Incluye campos con nombre y limite OSM cerrado,
+y asigna hoyos numerados cuyo punto final cae dentro del limite. Los hoyos
+duplicados se deduplican, prefiriendo geometria con par. Los hoyos OSM 10-18 se
+compactan y se pueden jugar como los hoyos 1-9. Los campos sin hoyos GPS se
+muestran igualmente y permiten una tarjeta manual, pero no tendran distancias
+OSM. Los datos incompletos o mal delimitados pueden quedar fuera del catalogo.
 
-La cobertura OSM varia. Solo se admiten campos delimitados como way/relation
-`leisure=golf_course`, con nombre y area utilizable por Overpass, y hoyos
-`golf=hole` con `ref` numerico unico de 1 a 18. Campos con varios recorridos que
-repiten numeros se rechazan en lugar de mezclar sus hoyos. La lista no garantiza
-incluir todos los campos ni estar ordenada por distancia. Algunos campos no
-tienen hoyos, tienen numeracion incompleta o carecen de area en Overpass.
-Los huecos de numeracion se muestran sin datos, sin inventar coordenadas.
+OSM no es un inventario oficial: un campo, un par o una geometria solo aparecen
+si alguien los ha mapeado. No se garantiza que incluya todos los campos reales
+de Espana ni que cada distancia sea correcta. Si el campo seleccionado tiene una
+tarjeta parcial, revisa los hoyos y pares antes de jugar.
 
 **La distancia no es a la bandera ni necesariamente al centro del green.**
 Se usa el ultimo punto del recorrido mapeado del hoyo, que OSM define desde tee
@@ -148,11 +168,11 @@ se muestra `--`, nunca un cero ficticio. Distancias mayores de 9999 m se ocultan
 
 ## Privacidad y atribucion
 
-GPS esta desactivado al iniciar. **Activar GPS** lo utiliza localmente.
-**Buscar campos** pide un consentimiento distinto antes de enviar latitud y
-longitud redondeadas a cinco decimales a Overpass Private.coffee por HTTPS;
-ese servidor y la infraestructura de conexion pueden recibir la IP y datos
-tecnicos de la solicitud. No se envia puntuacion, cuenta Garmin ni historial GPS.
+El GPS se enciende solo al cargar un campo o abrir la app con uno cargado.
+**Buscar campos** solicita los mosaicos estaticos
+de GitHub. La URL identifica una celda geografica de un grado y la infraestructura
+de red puede recibir la IP; no se envia la coordenada GPS exacta, puntuacion,
+cuenta Garmin ni historial GPS.
 El telefono hace de puente mediante Garmin Connect; su tratamiento corresponde
 a las condiciones de Garmin. No hay servidor propio, publicidad ni analitica.
 
@@ -168,6 +188,31 @@ El menu **Datos / privacidad** muestra origen, licencia y aviso de ubicacion.
 Antes de publicar, completa una politica de privacidad con tu identidad y
 contacto de soporte, publicala en una URL accesible y declarala en la tienda.
 Referencia de atribucion/licencia: <https://www.openstreetmap.org/copyright>.
+
+## Generar y publicar el catalogo
+
+El catalogo no se empaqueta dentro del `.iq`: se genera en el PC y se sirve como
+JSON estatico desde este repositorio publico. Descarga los extractos PBF actuales
+de [Espana](https://download.geofabrik.de/europe/spain.html) y
+[Canarias](https://download.geofabrik.de/africa/canary-islands.html) desde
+Geofabrik, instala Node.js y Osmium Tool, y ejecuta:
+
+```powershell
+node scripts\build-osm-catalog.mjs `
+  --spain E:\GarminGolfOsm\input\spain-latest.osm.pbf `
+  --canary E:\GarminGolfOsm\input\canary-islands-latest.osm.pbf `
+  --osmium E:\GarminGolfOsm\tools\osmium-env\Library\bin\osmium.exe `
+  --output data\osm\spain
+```
+
+La salida contiene `metadata.json`, mosaicos de un grado en `tiles\` y fichas
+por campo en `courses\`. Los PBF y los temporales no se guardan en Git. Cada
+actualizacion reemplaza los JSON generados; revisa los cambios y publica
+`data\osm\spain\` en la rama `main` para que la URL publica que usa la app los
+sirva. **No se publica automaticamente ni se modifica el remoto.** El paquete
+generado el 20-10-2026 contiene 345 campos con nombre y limites OSM, 126 con datos GPS
+de hoyos y 1.789 hoyos numerados. Los 886 JSON ocupan aproximadamente 448 KB;
+estas cifras cambiaran segun el extracto.
 
 ## 1. Preparar Windows y VS Code
 
@@ -256,9 +301,9 @@ Antes de considerar lista la app, faltan estos controles con el SDK real:
 - Capturas reales de puntuacion, distancias y menus a 166 x 166, sin solapamientos.
 - GPS simulado: sin fix, fix GOOD, desplazamiento, perdida de fix y GPS apagado.
 - Descarga real de un campo mapeado, par, regreso offline y reapertura de la app.
-- Desconexion del telefono, respuesta 429, timeout y cancelacion durante descarga.
+- Desconexion del telefono, HTTP 404/5xx, timeout y cancelacion durante descarga.
 - Nueva vuelta/cambio de campo, confirmacion y conservacion del campo anterior ante error.
-- Memoria por debajo de 131072 bytes, incluida la respuesta API mas grande.
+- Memoria por debajo de 131072 bytes, incluida la respuesta de mosaico mas grande.
 - Menus de edicion, par desconocido, putts/penalizaciones y reapertura de hoyo.
 - Editor numerico: limites, confirmacion, cancelacion y cambio de campo durante edicion.
 - Acceso rapido GPS/UP/DOWN y estados de campo ausente, GPS apagado y sin fix.
@@ -280,7 +325,7 @@ siguen siendo recomendables incluso si todas las pruebas del simulador pasan.
 4. Si Windows muestra su almacenamiento, coloca el archivo `.prg` compilado en
    **GARMIN/APPS**. Si no aparece, comprueba cable, modo USB y las indicaciones
    de Garmin para tu modelo; no formatees el reloj.
-5. Expulsa/desconecta de forma segura. Busca **Golf Instinct** en la lista de
+5. Expulsa/desconecta de forma segura. Busca **Golfin Golfin** en la lista de
    actividades/aplicaciones del reloj.
 
 No necesitas publicar en Connect IQ Store para tus pruebas por USB. No copies
@@ -310,10 +355,15 @@ Enviar el paquete no garantiza aprobacion ni publicacion inmediata.
 - `source/GolfApp.mc`: ciclo de vida y almacenamiento local.
 - `source/GolfRoundTests.mc`: pruebas del modelo.
 - `source/GolfCourseData.mc`: validacion de OSM, cache y distancias geograficas.
-- `source/GolfCourses.mc`: red, GPS, consentimiento de seleccion y descarga.
+- `source/GolfCourses.mc`: GPS, mosaicos estaticos, descarga y biblioteca offline.
 - `source/GolfRecording.mc`: ciclo de grabacion FIT y campos de resumen.
+- `resources/drawables/launcher_icon.png`: icono monocromo de 52 x 52 para el reloj.
+- `resources/drawables/golfin_golfin_logo_512.png`: logotipo cuadrado de alta resolucion para la ficha.
+- `resources/drawables/golfin_golfin_hero_1440x720.png`: imagen hero opcional para Connect IQ Store.
 - `resources/fitcontributions/fitcontributions.xml`: metadatos de resumen para Connect.
 - `scripts/verify.ps1`: compilacion/pruebas para el dispositivo y exportacion opcional.
+- `scripts/build-osm-catalog.mjs`: generador local de mosaicos y fichas OSM.
+- `data/osm/spain/`: catalogo OSM generado para publicar en la rama `main`.
 - `manifest.xml`: producto objetivo, tipo de app y permisos.
 
 Este proyecto no presupone acceso al catalogo de campos de Garmin ni a sus

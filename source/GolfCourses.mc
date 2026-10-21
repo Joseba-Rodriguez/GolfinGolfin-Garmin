@@ -1,13 +1,18 @@
 import Toybox.Application;
 import Toybox.Communications;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.Position;
 import Toybox.System;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
 class GolfCourses {
-    const ENDPOINT = "https://overpass.private.coffee/api/interpreter";
+    // jsDelivr sirve el repo publico con Content-Type application/json; raw.githubusercontent
+    // responde text/plain y Garmin Connect lo rechaza (-400) al pedir JSON.
+    const STATIC_DATA_BASE_URL = "https://cdn.jsdelivr.net/gh/Joseba-Rodriguez/GolfinGolfin-Garmin@main/data/osm/spain/";
+    const SEARCH_RADIUS_METERS = 20000;
+    const SEARCH_RESULT_LIMIT = 12;
     var parser;
     var course = null;
     var nearby = [];
@@ -19,18 +24,24 @@ class GolfCourses {
     var fixTime = 0;
     var pendingSearch = false;
     var requestId = 0;
+    var activeUrl = null;
+    var staticRequest = false;
     var phase = null;
     var timeout;
     var gpsWatch;
     var searchTime = null;
+    var searchOrigin = null;
     var draft = null;
     var numbers = [];
-    var downloadIndex = 0;
+    var replacementFavorite = null;
     var controller = null;
     var yards = false;
     var shotStart = null;
     var shotHole = null;
     var favorites = [];
+    var catalogTiles = [];
+    var catalogTileIndex = 0;
+    var catalogCandidates = [];
 
     function initialize() {
         parser = new GolfCourseData();
@@ -81,7 +92,7 @@ class GolfCourses {
         WatchUi.requestUpdate();
     }
 
-    function onPosition(info) {
+    function onPosition(info as Position.Info) as Void {
         if (!gpsEnabled) {
             return;
         }
@@ -104,16 +115,6 @@ class GolfCourses {
         if (busy) {
             return;
         }
-        if (searchTime != null && System.getTimer() - searchTime < 300000) {
-            if (nearby.size() > 0) {
-                controller = golfController;
-                showNearby();
-            } else {
-                status = "Espera 5 min";
-                WatchUi.requestUpdate();
-            }
-            return;
-        }
         controller = golfController;
         busy = true;
         pendingSearch = true;
@@ -133,20 +134,98 @@ class GolfCourses {
             return;
         }
         var coordinates = location.toDegrees();
-        var around = "(around:20000," + coordinates[0].format("%.5f") + "," + coordinates[1].format("%.5f") + ")";
-        phase = :search;
-        searchTime = System.getTimer();
+        searchOrigin = { "lat" => coordinates[0], "lon" => coordinates[1] };
         nearby = [];
-        status = "Buscando campos";
-        request("[out:json][timeout:20];(way[\"leisure\"=\"golf_course\"][\"name\"]" + around +
-            ";relation[\"leisure\"=\"golf_course\"][\"name\"]" + around + ";);out tags center 12;");
+        catalogCandidates = [];
+        catalogTiles = catalogTilesFor(coordinates);
+        catalogTileIndex = 0;
+        if (catalogTiles.size() == 0 || catalogTiles.size() > 9) {
+            fail("Catalogo solo Espana");
+            return;
+        }
+        status = "Catalogo 1/" + catalogTiles.size().toString();
+        requestCatalogTile();
     }
 
-    function areaQuery() {
-        return draft["type"] + "(" + draft["id"] + ");map_to_area->.course;";
+    function catalogTilesFor(coordinates) {
+        var result = [];
+        if (!(coordinates instanceof Lang.Array) || coordinates.size() < 2) {
+            return result;
+        }
+        var latitude = coordinates[0].toDouble();
+        var longitude = coordinates[1].toDouble();
+        var latitudeDelta = SEARCH_RADIUS_METERS.toDouble() / 111320.0;
+        var longitudeScale = Math.cos(Math.toRadians(latitude));
+        if (longitudeScale < 0.05) {
+            return result;
+        }
+        var longitudeDelta = SEARCH_RADIUS_METERS.toDouble() / (111320.0 * longitudeScale);
+        var south = latitude - latitudeDelta;
+        var north = latitude + latitudeDelta;
+        var west = longitude - longitudeDelta;
+        var east = longitude + longitudeDelta;
+        if (south < 26.0 || north > 46.0 || west < -21.0 || east > 7.0) {
+            return result;
+        }
+        for (var tileLat = Math.floor(south).toNumber(); tileLat <= Math.floor(north).toNumber(); tileLat += 1) {
+            for (var tileLon = Math.floor(west).toNumber(); tileLon <= Math.floor(east).toNumber(); tileLon += 1) {
+                result.add("tiles/lat_" + tileLat.toString() + "_lon_" + tileLon.toString() + ".json");
+            }
+        }
+        return result;
     }
 
-    function download(selectedCourse) {
+    function requestCatalogTile() {
+        if (catalogTileIndex >= catalogTiles.size()) {
+            nearby = closestCourses(catalogCandidates, searchOrigin);
+            busy = false;
+            activeUrl = null;
+            staticRequest = false;
+            if (nearby.size() > 0) {
+                status = "Elige campo";
+                error = null;
+                showNearby();
+            } else {
+                status = "Sin campos OSM";
+                error = "Sin campos en 20 km";
+            }
+            WatchUi.requestUpdate();
+            return;
+        }
+        status = "Catalogo " + (catalogTileIndex + 1).toString() + "/" + catalogTiles.size().toString();
+        requestStatic(STATIC_DATA_BASE_URL + catalogTiles[catalogTileIndex], :catalogTile);
+    }
+
+    function closestCourses(candidates, origin) {
+        var result = [];
+        var used = [];
+        for (var index = 0; index < candidates.size(); index += 1) {
+            used.add(false);
+        }
+        for (var resultIndex = 0; resultIndex < SEARCH_RESULT_LIMIT; resultIndex += 1) {
+            var closestIndex = null;
+            var closestDistance = SEARCH_RADIUS_METERS + 1;
+            for (var candidateIndex = 0; candidateIndex < candidates.size(); candidateIndex += 1) {
+                if (used[candidateIndex]) {
+                    continue;
+                }
+                var distance = parser.distanceMeters(origin, candidates[candidateIndex]);
+                if (distance != null && distance <= SEARCH_RADIUS_METERS && distance < closestDistance) {
+                    closestIndex = candidateIndex;
+                    closestDistance = distance;
+                }
+            }
+            if (closestIndex == null) {
+                break;
+            }
+            used[closestIndex] = true;
+            candidates[closestIndex]["distance"] = closestDistance;
+            result.add(candidates[closestIndex]);
+        }
+        return result;
+    }
+
+    function download(selectedCourse, replacementIndex) {
         if (controller.recording.session != null) {
             error = "Finaliza actividad";
             WatchUi.requestUpdate();
@@ -155,130 +234,258 @@ class GolfCourses {
         if (busy) {
             return;
         }
-        draft = { "id" => selectedCourse["id"], "type" => selectedCourse["type"],
-            "name" => selectedCourse["name"], "count" => 18, "holes" => [] };
+        if (!(selectedCourse["file"] instanceof Lang.String)) {
+            error = "Campo sin ficha offline";
+            WatchUi.requestUpdate();
+            return;
+        }
+        draft = { "id" => selectedCourse["id"], "type" => selectedCourse["type"], "source" => "osm",
+            "name" => selectedCourse["name"], "count" => selectedCourse["count"],
+            "holes" => [] };
+        replacementFavorite = replacementIndex;
         for (var index = 0; index < 18; index += 1) {
             draft["holes"].add(null);
         }
         busy = true;
-        phase = :numbers;
-        status = "Leyendo hoyos";
-        request("[out:json][timeout:20];" + areaQuery() + "way(area.course)[\"golf\"=\"hole\"];out tags 37;");
+        status = "Descargando campo";
+        requestStatic(STATIC_DATA_BASE_URL + selectedCourse["file"], :detail);
     }
 
-    function request(query) {
+    function requestStatic(url, requestPhase) {
+        staticRequest = true;
+        activeUrl = url;
+        phase = requestPhase;
+        sendRequest();
+        WatchUi.requestUpdate();
+    }
+
+    function sendRequest() {
         requestId += 1;
+        var currentRequestId = requestId;
         error = null;
-        timeout.start(method(:onTimeout), 60000, false);
+        timeout.start(method(:onTimeout), 30000, false);
         try {
-            Communications.makeWebRequest(ENDPOINT, { "data" => query }, {
-                :method => Communications.HTTP_REQUEST_METHOD_POST,
-                :headers => { "Content-Type" => Communications.REQUEST_CONTENT_TYPE_URL_ENCODED,
-                    "User-Agent" => "GolfInstinct/0.2 (ConnectIQ; ad471e7b9ead4abdab2ebc51914d89da)" },
+            Communications.makeWebRequest(activeUrl, null, {
+                :method => Communications.HTTP_REQUEST_METHOD_GET,
                 :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
-                :context => requestId
+                :context => currentRequestId
             }, method(:onResponse));
         } catch (exception) {
             fail("Error conexion");
         }
-        WatchUi.requestUpdate();
     }
 
-    function onResponse(code, data, context) {
+    function networkError(code) {
+        if (code == -104 || code == -2) {
+            return "Sin movil conectado";
+        } else if (code == -300) {
+            return "Movil sin respuesta";
+        } else if (code == -400 || code == -401) {
+            return "Respuesta no JSON";
+        } else if (code == -402 || code == -403) {
+            return "Respuesta muy grande";
+        } else if (code == 404) {
+            return "Ficha no publicada";
+        } else if (code < 0) {
+            return "Error red " + code.toString();
+        }
+        return "Error HTTP " + code.toString();
+    }
+
+    function onResponse(code as Lang.Number,
+        data as Lang.Dictionary or Lang.String or Toybox.PersistedContent.Iterator or Null,
+        context as Lang.Object) as Void {
         if (!busy || context != requestId) {
             return;
         }
         timeout.stop();
-        if (code != 200 || !(data instanceof Lang.Dictionary) || data["remark"] != null ||
-            !(data["elements"] instanceof Lang.Array)) {
-            fail(code == 429 ? "API ocupada" : "Error red/API");
+        if (code == 404 && phase == :catalogTile) {
+            activeUrl = null;
+            staticRequest = false;
+            catalogTileIndex += 1;
+            requestCatalogTile();
             return;
         }
-        if (phase == :search) {
-            nearby = parser.courses(data);
-            busy = false;
-            status = nearby.size() == 0 ? "Sin campos OSM" : "Elige campo";
-            if (nearby.size() > 0) {
-                showNearby();
+        if (code != 200) {
+            fail(networkError(code));
+            return;
+        }
+        if (!(data instanceof Lang.Dictionary)) {
+            fail("Catalogo JSON invalido");
+            return;
+        }
+        activeUrl = null;
+        staticRequest = false;
+        if (phase == :catalogTile) {
+            if (!(data["courses"] instanceof Lang.Array) ||
+                !(data["license"] instanceof Lang.String) ||
+                !data["license"].equals("ODbL-1.0")) {
+                fail("Mosaico OSM invalido");
+                return;
             }
-        } else if (phase == :numbers) {
+            var tileCourses = parser.catalogCourses(data);
+            for (var index = 0; index < tileCourses.size(); index += 1) {
+                catalogCandidates.add(tileCourses[index]);
+            }
+            catalogTileIndex += 1;
+            requestCatalogTile();
+        } else if (phase == :detail) {
+            if (!(data["id"] instanceof Lang.String) || !data["id"].equals(draft["id"]) ||
+                !(data["license"] instanceof Lang.String) || !data["license"].equals("ODbL-1.0") ||
+                !(data["elements"] instanceof Lang.Array)) {
+                fail("Ficha OSM invalida");
+                return;
+            }
             numbers = parser.holeNumbers(data);
-            if (numbers.size() == 0) {
-                fail("Sin hoyos unicos");
+            if (numbers.size() == 0 && data["elements"].size() > 0) {
+                fail("Ficha sin hoyos validos");
                 return;
             }
-            draft["count"] = numbers[numbers.size() - 1];
-            downloadIndex = 0;
-            downloadHole();
-        } else if (phase == :hole) {
-            var holes = parser.holes(data);
-            var number = numbers[downloadIndex];
-            if (holes.size() != 18 || holes[number - 1] == null) {
-                fail("Hoyo sin datos");
-                return;
-            }
-            draft["holes"][number - 1] = holes[number - 1];
-            downloadIndex += 1;
-            if (downloadIndex < numbers.size()) {
-                downloadHole();
-            } else {
-                var freshRound = new GolfRound();
-                freshRound.holeCount = draft["count"];
-                for (var holeIndex = 0; holeIndex < 18; holeIndex += 1) {
-                    if (draft["holes"][holeIndex] != null) {
-                        freshRound.pars[holeIndex] = draft["holes"][holeIndex]["par"];
-                    }
-                }
-                try {
-                    Application.Storage.setValue("session-v2", { "round" => freshRound.snapshot(), "course" => draft,
-                        "favorites" => favorites, "yards" => yards });
-                } catch (exception) {
-                    fail("Error guardado");
+            for (var position = 0; position < numbers.size(); position += 1) {
+                var number = numbers[position];
+                var holePosition = draft["count"] == 9 && number > 9 ? number - 10 : number - 1;
+                if (holePosition < 0 || holePosition >= draft["count"] ||
+                    !storeDownloadedHole(draft, holePosition, number, data)) {
+                    fail("Error leyendo ficha");
                     return;
                 }
-                course = draft;
-                draft = null;
-                busy = false;
-                status = "Campo guardado";
-                controller.round.reset();
-                controller.round.holeCount = course["count"];
-                shotStart = null;
-                applyPars(controller.round, true);
-                controller.view.mode = :play;
-                controller.persist();
             }
+            completeDownload();
+        } else {
+            fail("Fase catalogo invalida");
         }
         WatchUi.requestUpdate();
     }
 
-    function downloadHole() {
-        phase = :hole;
-        var number = numbers[downloadIndex];
-        status = "Hoyo " + (downloadIndex + 1).toString() + "/" + numbers.size().toString();
-        request("[out:json][timeout:20];" + areaQuery() + "way(area.course)[\"golf\"=\"hole\"][\"ref\"=\"" +
-            number.toString() + "\"];out tags geom 2;");
+    function completeDownload() {
+        var freshRound = new GolfRound();
+        freshRound.holeCount = draft["count"];
+        for (var holeIndex = 0; holeIndex < 18; holeIndex += 1) {
+            if (draft["holes"][holeIndex] != null) {
+                freshRound.pars[holeIndex] = draft["holes"][holeIndex]["par"];
+            }
+        }
+        var updatedFavorites = favoritesIncluding(draft, replacementFavorite);
+        if (updatedFavorites == null) {
+            fail("Biblioteca llena");
+            return;
+        }
+        try {
+            Application.Storage.setValue("session-v2", { "round" => freshRound.snapshot(), "course" => draft,
+                "favorites" => updatedFavorites, "yards" => yards });
+        } catch (exception) {
+            fail("Error guardado");
+            return;
+        }
+        favorites = updatedFavorites;
+        course = draft;
+        draft = null;
+        replacementFavorite = null;
+        busy = false;
+        status = "Campo offline y listo";
+        error = null;
+        controller.round.reset();
+        controller.round.holeCount = course["count"];
+        shotStart = null;
+        applyPars(controller.round, true);
+        controller.view.mode = :play;
+        controller.persist();
+        startGps();
     }
 
     function showNearby() {
         var menu = new WatchUi.Menu2({ :title => "Campos OSM" });
         for (var index = 0; index < nearby.size(); index += 1) {
-            menu.addItem(new WatchUi.MenuItem(nearby[index]["name"], null, index, null));
+            var distance = nearby[index]["distance"];
+            var distanceLabel = distance < 1000 ? distance.toString() + " m" :
+                Math.round(distance.toDouble() / 1000.0).toString() + " km";
+            var mapped = nearby[index]["holes"];
+            var courseLabel = mapped == 0 ? "sin hoyos GPS" : mapped.toString() + " hoyos GPS";
+            menu.addItem(new WatchUi.MenuItem(nearby[index]["name"],
+                distanceLabel + " / " + courseLabel, index, null));
         }
         WatchUi.pushView(menu, new GolfCourseMenuDelegate(self), WatchUi.SLIDE_UP);
     }
 
+    function favoriteIndex(name) {
+        for (var index = 0; index < favorites.size(); index += 1) {
+            if (favorites[index]["name"] instanceof Lang.String &&
+                favorites[index]["name"].equals(name)) {
+                return index;
+            }
+        }
+        return null;
+    }
+
+    function favoriteCourseIndex(candidate) {
+        if (candidate["id"] instanceof Lang.String) {
+            for (var index = 0; index < favorites.size(); index += 1) {
+                if (favorites[index]["id"] instanceof Lang.String &&
+                    favorites[index]["id"].equals(candidate["id"])) {
+                    return index;
+                }
+            }
+            return null;
+        }
+        return favoriteIndex(candidate["name"]);
+    }
+
+    function favoritesIncluding(selectedCourse, replacementIndex) {
+        var updated = [];
+        var position = favoriteCourseIndex(selectedCourse);
+        for (var index = 0; index < favorites.size(); index += 1) {
+            updated.add(favorites[index]);
+        }
+        if (position == null) {
+            if (replacementIndex instanceof Lang.Number &&
+                replacementIndex >= 0 && replacementIndex < updated.size()) {
+                position = replacementIndex;
+            } else if (updated.size() < 3) {
+                updated.add(selectedCourse);
+                return updated;
+            } else {
+                return null;
+            }
+        }
+        updated[position] = selectedCourse;
+        return updated;
+    }
+
+    function storeDownloadedHole(courseDraft, position, number, data) {
+        if (!(courseDraft["holes"] instanceof Lang.Array) || position < 0 ||
+            position >= courseDraft["count"] || number < 1 || number > 18) {
+            return false;
+        }
+        var hole = parser.holeForNumber(data, number);
+        if (hole != null) {
+            courseDraft["holes"][position] = hole;
+        }
+        return true;
+    }
+
     function onTimeout() {
-        fail(pendingSearch ? "GPS agotado" : "Red agotada");
-        Communications.cancelAllRequests();
+        if (pendingSearch) {
+            fail("GPS agotado");
+        } else {
+            fail("Catalogo sin respuesta");
+        }
     }
 
     function fail(message) {
         requestId += 1;
         timeout.stop();
+        Communications.cancelAllRequests();
+        activeUrl = null;
+        staticRequest = false;
+        phase = null;
         busy = false;
         pendingSearch = false;
         draft = null;
         numbers = [];
+        catalogTiles = [];
+        catalogTileIndex = 0;
+        catalogCandidates = [];
+        replacementFavorite = null;
         status = message;
         error = message;
         WatchUi.requestUpdate();
@@ -320,6 +527,15 @@ class GolfCourses {
         }
         var coordinates = location.toDegrees();
         return parser.distanceMeters({ "lat" => coordinates[0], "lon" => coordinates[1] }, target);
+    }
+
+    // Longitud aproximada tee -> green segun la linea OSM del hoyo.
+    function holeLength(holeIndex) {
+        var target = currentHole(holeIndex);
+        if (target == null || target["tlat"] == null || target["tlon"] == null) {
+            return null;
+        }
+        return parser.distanceMeters({ "lat" => target["tlat"], "lon" => target["tlon"] }, target);
     }
 
     function applyPars(round, overwrite) {
@@ -381,13 +597,12 @@ class GolfCourses {
             error = "Sin campo listo";
             return;
         }
-        for (var index = 0; index < favorites.size(); index += 1) {
-            if (favorites[index]["name"] == course["name"]) {
-                favorites[index] = course;
-                status = "Campo actualizado";
-                error = null;
-                return;
-            }
+        var position = favoriteCourseIndex(course);
+        if (position != null) {
+            favorites[position] = course;
+            status = "Campo actualizado";
+            error = null;
+            return;
         }
         if (favorites.size() >= 3) {
             error = "Biblioteca llena";
@@ -405,7 +620,8 @@ class GolfCourses {
             menu.addItem(new WatchUi.MenuItem("Sin campos guardados", null, :empty, null));
         }
         for (var index = 0; index < favorites.size(); index += 1) {
-            menu.addItem(new WatchUi.MenuItem(favorites[index]["name"], null, index, null));
+            menu.addItem(new WatchUi.MenuItem(favorites[index]["name"],
+                favorites[index]["count"].toString() + " hoyos offline", index, null));
         }
         WatchUi.pushView(menu, new GolfLibraryDelegate(self, null), WatchUi.SLIDE_UP);
     }
@@ -413,6 +629,11 @@ class GolfCourses {
     function useFavorite(index) {
         if (busy || controller.recording.session != null) {
             error = "Finaliza / cancela";
+            return;
+        }
+        if (!(index instanceof Lang.Number) || index < 0 || index >= favorites.size()) {
+            error = "Campo offline no disponible";
+            WatchUi.requestUpdate();
             return;
         }
         var choice = favorites[index];
@@ -437,6 +658,7 @@ class GolfCourses {
         error = null;
         controller.view.mode = :play;
         controller.persist();
+        startGps();
     }
 
     function createManual(golfController, count) {
@@ -484,7 +706,8 @@ class GolfCourses {
 
     function targetLabel(holeIndex) {
         var target = currentHole(holeIndex);
-        return target != null && target["source"] == "manual" ? "GREEN GPS " : "OSM APROX ";
+        return target != null && target["source"] instanceof Lang.String && target["source"].equals("manual") ?
+            "GREEN GPS " : "OSM APROX ";
     }
 }
 
@@ -507,7 +730,7 @@ class GolfLibraryDelegate extends WatchUi.Menu2InputDelegate {
             }
             var menu = new WatchUi.Menu2({ :title => "Campo guardado" });
             menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
-            menu.addItem(new WatchUi.MenuItem("Jugar / borrar vuelta", null, :use, null));
+            menu.addItem(new WatchUi.MenuItem("Cargar en partida", null, :use, null));
             menu.addItem(new WatchUi.MenuItem("Eliminar de biblioteca", null, :delete, null));
             WatchUi.pushView(menu, new GolfLibraryDelegate(service, identifier), WatchUi.SLIDE_UP);
         } else if (identifier == :use) {
@@ -530,9 +753,15 @@ class GolfCourseMenuDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item) {
         var selectedCourse = service.nearby[item.getId()];
         WatchUi.popView(WatchUi.SLIDE_DOWN);
-        var menu = new WatchUi.Menu2({ :title => "Cambiar y borrar vuelta?" });
+        var menu = new WatchUi.Menu2({ :title => selectedCourse["name"] });
+        var distance = selectedCourse["distance"];
+        var distanceLabel = distance < 1000 ? distance.toString() + " m" :
+            Math.round(distance.toDouble() / 1000.0).toString() + " km";
+        var mapped = selectedCourse["holes"] == 0 ? "sin GPS" :
+            selectedCourse["holes"].toString() + " hoyos GPS";
+        menu.addItem(new WatchUi.MenuItem("Guardar offline y jugar",
+            distanceLabel + " / " + mapped, :download, null));
         menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
-        menu.addItem(new WatchUi.MenuItem("Descargar campo", null, :download, null));
         WatchUi.pushView(menu, new GolfCourseConfirmDelegate(service, selectedCourse), WatchUi.SLIDE_UP);
     }
 }
@@ -550,7 +779,36 @@ class GolfCourseConfirmDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item) {
         WatchUi.popView(WatchUi.SLIDE_DOWN);
         if (item.getId() == :download) {
-            service.download(selectedCourse);
+            if (service.favoriteCourseIndex(selectedCourse) != null || service.favorites.size() < 3) {
+                service.download(selectedCourse, null);
+            } else {
+                var menu = new WatchUi.Menu2({ :title => "Biblioteca llena" });
+                menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
+                for (var index = 0; index < service.favorites.size(); index += 1) {
+                    menu.addItem(new WatchUi.MenuItem(service.favorites[index]["name"],
+                        "Reemplazar campo offline", index, null));
+                }
+                WatchUi.pushView(menu, new GolfCourseReplaceDelegate(service, selectedCourse), WatchUi.SLIDE_UP);
+            }
+        }
+    }
+}
+
+class GolfCourseReplaceDelegate extends WatchUi.Menu2InputDelegate {
+    var service;
+    var selectedCourse;
+
+    function initialize(courseService, courseChoice) {
+        Menu2InputDelegate.initialize();
+        service = courseService;
+        selectedCourse = courseChoice;
+    }
+
+    function onSelect(item) {
+        var replacementIndex = item.getId();
+        WatchUi.popView(WatchUi.SLIDE_DOWN);
+        if (replacementIndex instanceof Lang.Number) {
+            service.download(selectedCourse, replacementIndex);
         }
     }
 }

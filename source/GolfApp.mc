@@ -6,12 +6,14 @@ class GolfApp extends Application.AppBase {
     var round;
     var courses;
     var recording;
+    var history;
 
     function initialize() {
         AppBase.initialize();
         round = new GolfRound();
         courses = new GolfCourses();
         recording = new GolfRecording(round, courses);
+        history = new GolfHistory();
     }
 
     function onStart(state) {
@@ -25,6 +27,9 @@ class GolfApp extends Application.AppBase {
         }
         round.restore(saved instanceof Lang.Dictionary ? saved["round"] : Application.Storage.getValue("round-v1"));
         courses.applyPars(round, false);
+        if (courses.course != null && !round.finished) {
+            courses.startGps();
+        }
     }
 
     function onStop(state) {
@@ -47,6 +52,9 @@ class GolfApp extends Application.AppBase {
 
     function getInitialView() {
         var view = new GolfView(round, courses, recording);
+        if (round.finished) {
+            view.mode = :summary;
+        }
         return [view, new GolfDelegate(view, round, courses, recording)];
     }
 }

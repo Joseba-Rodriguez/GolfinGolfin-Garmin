@@ -49,7 +49,7 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
 
     function onBack() {
         if (view.mode != :play) {
-            view.mode = :play;
+            view.mode = round.finished ? :summary : :play;
             WatchUi.requestUpdate();
             return true;
         }
@@ -62,8 +62,21 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
 
     function onMenu() {
         var menu = new WatchUi.Menu2({ :title => "Golf" });
-        menu.addItem(new WatchUi.MenuItem("Anotar hoyo", null, :editHole, null));
-        menu.addItem(new WatchUi.MenuItem("Tarjeta", null, :card, null));
+        if (courses.course == null) {
+            menu.addItem(new WatchUi.MenuItem("Buscar campo cercano", "GPS + movil", :courses, null));
+            menu.addItem(new WatchUi.MenuItem("Mis campos", null, :library, null));
+        }
+        if (!round.finished) {
+            menu.addItem(new WatchUi.MenuItem("Anotar hoyo", "Hoyo " + (round.hole + 1).toString(), :editHole, null));
+        }
+        menu.addItem(new WatchUi.MenuItem("Tarjeta", round.total().toString() + " golpes", :card, null));
+        if (!round.finished) {
+            menu.addItem(new WatchUi.MenuItem("Finalizar vuelta", null, :finishRound, null));
+        } else {
+            menu.addItem(new WatchUi.MenuItem("Vuelta finalizada", round.total().toString() + " golpes", :summary, null));
+            menu.addItem(new WatchUi.MenuItem("Nueva vuelta", null, :reset, null));
+        }
+        menu.addItem(new WatchUi.MenuItem("Historial", null, :history, null));
         menu.addItem(new WatchUi.MenuItem("Medir golpe", null, :shot, null));
         menu.addItem(new WatchUi.MenuItem("Actividad", recording.status, :activity, null));
         menu.addItem(new WatchUi.MenuItem("Campos", courses.course == null ? "Sin campo" : courses.course["name"], :fields, null));
@@ -74,8 +87,8 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
 
     function showFields() {
         var menu = new WatchUi.Menu2({ :title => "Campos" });
+        menu.addItem(new WatchUi.MenuItem("Buscar campo cercano", "GPS + movil", :courses, null));
         menu.addItem(new WatchUi.MenuItem("Mis campos offline", null, :library, null));
-        menu.addItem(new WatchUi.MenuItem("Buscar campos", null, :courses, null));
         menu.addItem(new WatchUi.MenuItem("Guardar campo offline", null, :favorite, null));
         menu.addItem(new WatchUi.MenuItem("Campo manual 9 hoyos", null, :manual9, null));
         menu.addItem(new WatchUi.MenuItem("Campo manual 18 hoyos", null, :manual18, null));
@@ -109,6 +122,22 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
         WatchUi.pushView(menu, new GolfMenuDelegate(self, false), WatchUi.SLIDE_UP);
     }
 
+    function history() {
+        return (Application.getApp() as GolfApp).history;
+    }
+
+    function courseName() {
+        return courses.course == null ? null : courses.course["name"];
+    }
+
+    // Cierra la vuelta una sola vez y la guarda en el historial.
+    function finishRound() {
+        if (!round.finished) {
+            round.finishRound();
+            history().archive(round, courseName());
+        }
+    }
+
     function persist() {
         recording.updateFields();
         (Application.getApp() as GolfApp).saveRound();
@@ -116,6 +145,11 @@ class GolfDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function showHoleEditor() {
+        if (round.finished) {
+            view.mode = :summary;
+            WatchUi.requestUpdate();
+            return;
+        }
         var menu = new WatchUi.Menu2({ :title => "Hoyo " + (round.hole + 1).toString() });
         menu.addItem(new WatchUi.MenuItem("Cerrar hoyo", round.scores[round.hole].toString() + " golpes", :finishHole, null));
         menu.addItem(new WatchUi.MenuItem("Golpes", round.scores[round.hole].toString(), :editStrokes, null));
@@ -174,14 +208,37 @@ class GolfMenuDelegate extends WatchUi.Menu2InputDelegate {
                     WatchUi.requestUpdate();
                     return;
                 }
+                if (!controller.round.finished) {
+                    controller.history().archive(controller.round, controller.courseName());
+                }
                 controller.round.reset();
                 controller.view.mode = :play;
                 controller.persist();
+                if (controller.courses.course != null) {
+                    controller.courses.startGps();
+                }
             }
             return;
         }
         if (identifier == :editHole) {
             controller.showHoleEditor();
+            return;
+        }
+        if (identifier == :finishRound) {
+            if (controller.recording.session != null) {
+                controller.showActivity();
+                return;
+            }
+            var menu = new WatchUi.Menu2({ :title => "Finalizar esta vuelta?" });
+            menu.addItem(new WatchUi.MenuItem("Seguir jugando", null, :cancel, null));
+            menu.addItem(new WatchUi.MenuItem("Ver resumen", null, :confirmFinishRound, null));
+            WatchUi.pushView(menu, new GolfMenuDelegate(controller, false), WatchUi.SLIDE_UP);
+            return;
+        }
+        if (identifier == :confirmFinishRound) {
+            controller.finishRound();
+            controller.view.mode = :summary;
+            controller.persist();
             return;
         }
         if (identifier == :fields) {
@@ -209,6 +266,22 @@ class GolfMenuDelegate extends WatchUi.Menu2InputDelegate {
             controller.persist();
             return;
         }
+        if (identifier == :history) {
+            controller.history().show();
+            return;
+        }
+        if (identifier == :courses) {
+            controller.courses.findNearby(controller);
+            return;
+        }
+        if (identifier == :gps) {
+            if (controller.courses.gpsEnabled) {
+                controller.courses.stopGps();
+            } else {
+                controller.courses.startGps();
+            }
+            return;
+        }
         if (identifier == :library) {
             controller.courses.showLibrary(controller);
             return;
@@ -219,20 +292,15 @@ class GolfMenuDelegate extends WatchUi.Menu2InputDelegate {
             return;
         }
         if (identifier == :reset) {
-            var menu = new WatchUi.Menu2({ :title => "Borrar vuelta?" });
+            var menu = new WatchUi.Menu2({ :title => "Empezar nueva vuelta?" });
             menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
-            menu.addItem(new WatchUi.MenuItem("Borrar", null, :confirmReset, null));
+            menu.addItem(new WatchUi.MenuItem("Si, nueva vuelta", "Conservar campo", :confirmReset, null));
             WatchUi.pushView(menu, new GolfMenuDelegate(controller, true), WatchUi.SLIDE_UP);
             return;
         }
-        if (identifier == :courses || identifier == :gps || identifier == :clearCourse ||
+        if (identifier == :clearCourse ||
             identifier == :manual9 || identifier == :manual18 || identifier == :green) {
-            if (identifier == :gps && controller.courses.gpsEnabled) {
-                controller.courses.stopGps();
-                return;
-            }
-            var title = identifier == :courses ? "Enviar GPS a Overpass?" :
-                identifier == :gps ? "Activar GPS local?" : identifier == :green ? "Fijar green donde estoy?" :
+            var title = identifier == :green ? "Fijar green donde estoy?" :
                 identifier == :manual9 || identifier == :manual18 ? "Crear campo / borrar vuelta?" : "Borrar campo y vuelta?";
             var menu = new WatchUi.Menu2({ :title => title });
             menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
@@ -249,9 +317,12 @@ class GolfMenuDelegate extends WatchUi.Menu2InputDelegate {
             if (identifier == :about) {
                 menu.addItem(new WatchUi.MenuItem("OpenStreetMap contributors", "ODbL 1.0", :info, null));
                 menu.addItem(new WatchUi.MenuItem("openstreetmap.org/copyright", null, :info, null));
-                menu.addItem(new WatchUi.MenuItem("Overpass Private.coffee", "Recibe ubicacion e IP", :info, null));
+                menu.addItem(new WatchUi.MenuItem("Catalogo publico GitHub", "Fichas OSM estaticas", :info, null));
+                menu.addItem(new WatchUi.MenuItem("Busqueda por mosaicos", "No envia GPS exacto", :info, null));
+                menu.addItem(new WatchUi.MenuItem("Red publica", "Ve IP y mosaico consultado", :info, null));
                 menu.addItem(new WatchUi.MenuItem("GPS aproximado", "No posicion de bandera", :info, null));
                 menu.addItem(new WatchUi.MenuItem("Vuelta guardada localmente", "Sin analitica", :info, null));
+                menu.addItem(new WatchUi.MenuItem("Version instalada", Rez.Strings.AppVersion, :info, null));
             } else {
                 menu.addItem(new WatchUi.MenuItem(controller.courses.status, null, :info, null));
                 menu.addItem(new WatchUi.MenuItem(controller.courses.course == null ? "Sin campo" :
@@ -271,7 +342,8 @@ class GolfMenuDelegate extends WatchUi.Menu2InputDelegate {
             WatchUi.pushView(menu, new GolfInfoDelegate(), WatchUi.SLIDE_UP);
             return;
         }
-        controller.view.mode = identifier == :summary ? :summary : identifier == :distance ? :distance :
+        controller.view.mode = controller.round.finished ? :summary :
+            identifier == :summary ? :summary : identifier == :distance ? :distance :
             identifier == :shot ? :shot : identifier == :score ? :score : :play;
         if (identifier == :previous) {
             controller.round.changeHole(-1);
@@ -293,11 +365,7 @@ class GolfConsentDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item) {
         var identifier = item.getId();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
-        if (identifier == :courses) {
-            controller.courses.findNearby(controller);
-        } else if (identifier == :gps) {
-            controller.courses.startGps();
-        } else if (identifier == :manual9 || identifier == :manual18) {
+        if (identifier == :manual9 || identifier == :manual18) {
             controller.courses.createManual(controller, identifier == :manual9 ? 9 : 18);
         } else if (identifier == :green) {
             controller.courses.markGreen(controller.round);
@@ -367,7 +435,11 @@ class GolfHoleDelegate extends WatchUi.Menu2InputDelegate {
             return;
         }
         if (identifier == :finishHole) {
+            var result = controller.round.resultForHole(controller.round.hole);
             if (controller.round.finishHole()) {
+                if (result != null) {
+                    controller.view.showCelebration(result, controller.round.hole + 1);
+                }
                 controller.round.changeHole(1);
                 controller.view.mode = :play;
             } else {
@@ -465,11 +537,8 @@ class GolfActivityDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item) {
         var identifier = item.getId();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
-        var needsStartConsent = identifier == :start &&
-            (controller.recording.session == null || !controller.courses.gpsEnabled);
-        if (!confirmation && (needsStartConsent || identifier == :save || identifier == :discard)) {
-            var title = identifier == :start ? "Grabar GPS para Connect?" :
-                identifier == :save ? "Guardar actividad?" : "Descartar actividad?";
+        if (!confirmation && (identifier == :save || identifier == :discard)) {
+            var title = identifier == :save ? "Guardar actividad?" : "Descartar actividad?";
             var menu = new WatchUi.Menu2({ :title => title });
             menu.addItem(new WatchUi.MenuItem("Cancelar", null, :cancel, null));
             menu.addItem(new WatchUi.MenuItem("Aceptar", null, identifier, null));
@@ -490,9 +559,17 @@ class GolfActivityDelegate extends WatchUi.Menu2InputDelegate {
         } else if (identifier == :pause) {
             controller.recording.pause();
         } else if (identifier == :save) {
+            var roundBeforeFinish = controller.round.snapshot();
+            var wasFinished = controller.round.finished;
+            controller.round.finishRound();
             if (controller.recording.save()) {
+                if (!wasFinished) {
+                    controller.history().archive(controller.round, controller.courseName());
+                }
                 controller.courses.stopGps();
                 controller.view.mode = :summary;
+            } else {
+                controller.round.restore(roundBeforeFinish);
             }
         } else if (identifier == :discard) {
             if (controller.recording.discard()) {

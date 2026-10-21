@@ -8,6 +8,7 @@ class GolfRound {
     var putts = [];
     var penalties = [];
     var completed = [];
+    var finished = false;
 
     function initialize() {
         reset();
@@ -15,6 +16,7 @@ class GolfRound {
 
     function reset() {
         hole = 0;
+        finished = false;
         scores = [];
         putts = [];
         penalties = [];
@@ -31,6 +33,9 @@ class GolfRound {
     }
 
     function changeScore(delta) {
+        if (finished) {
+            return;
+        }
         var updated = scores[hole] + delta;
         if (updated >= putts[hole] + penalties[hole] && updated <= 99) {
             scores[hole] = updated;
@@ -39,12 +44,15 @@ class GolfRound {
     }
 
     function setPar(value) {
-        if (value instanceof Lang.Number && value >= 3 && value <= 6) {
+        if (!finished && value instanceof Lang.Number && value >= 3 && value <= 6) {
             pars[hole] = value;
         }
     }
 
     function changePutts(delta) {
+        if (finished) {
+            return;
+        }
         var updated = putts[hole] + delta;
         if (updated >= 0 && updated <= scores[hole] - penalties[hole]) {
             putts[hole] = updated;
@@ -52,6 +60,9 @@ class GolfRound {
     }
 
     function changePenalty(delta) {
+        if (finished) {
+            return;
+        }
         var updated = penalties[hole] + delta;
         var strokes = scores[hole] + delta;
         if (updated >= 0 && strokes <= 99 && strokes >= putts[hole] + updated) {
@@ -62,11 +73,37 @@ class GolfRound {
     }
 
     function finishHole() {
-        if (scores[hole] == 0) {
+        if (finished || scores[hole] == 0) {
             return false;
         }
         completed[hole] = true;
         return true;
+    }
+
+    function finishRound() {
+        if (!finished && scores[hole] > 0) {
+            completed[hole] = true;
+        }
+        finished = true;
+    }
+
+    function resultForHole(holeIndex) {
+        if (holeIndex < 0 || holeIndex >= holeCount || pars[holeIndex] == null || scores[holeIndex] == 0) {
+            return null;
+        }
+        var difference = scores[holeIndex] - pars[holeIndex];
+        if (difference <= -2) {
+            return :eagle;
+        } else if (difference == -1) {
+            return :birdie;
+        } else if (difference == 0) {
+            return :par;
+        } else if (difference == 1) {
+            return :bogey;
+        } else if (difference == 2) {
+            return :doubleBogey;
+        }
+        return :tripleBogey;
     }
 
     function completedCount() {
@@ -142,6 +179,7 @@ class GolfRound {
             penalties = saved["penalties"];
             completed = saved["completed"];
         }
+        finished = saved["finished"] instanceof Lang.Boolean && saved["finished"];
     }
 
     function validExtras(saved) {
@@ -169,6 +207,7 @@ class GolfRound {
 
     function snapshot() {
         return { "hole" => hole, "scores" => scores, "pars" => pars,
-            "putts" => putts, "penalties" => penalties, "completed" => completed };
+            "putts" => putts, "penalties" => penalties, "completed" => completed,
+            "finished" => finished };
     }
 }

@@ -50,7 +50,7 @@ try {
     $testOutput | Tee-Object -FilePath 'bin\test-results.log' | Out-Host
     $resultText = $testOutput | Out-String
     $testCount = [regex]::Match($resultText, 'Ran\s+(\d+)\s+tests?')
-    if ($testExitCode -ne 0 -or $resultText -notmatch 'PASSED\s*\(failures=0,\s*errors=0\)' -or
+    if ($testExitCode -ne 0 -or $resultText -notmatch 'PASSED\s*\((?:failures=0,\s*errors=0|passed=\d+,\s*failed=0,\s*errors=0)\)' -or
         -not $testCount.Success -or [int]$testCount.Groups[1].Value -ne $expectedTests) {
         throw 'No se confirma que TODAS las pruebas pasen. Revisa bin/test-results.log; no se exporta.'
     }
