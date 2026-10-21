@@ -95,6 +95,7 @@ class GolfCourseData {
                 entry["name"].length() > 64 || !validPoint(entry) ||
                 !(entry["holes"] instanceof Lang.Number) || entry["holes"] < 0 ||
                 (entry["greens"] != null && !(entry["greens"] instanceof Lang.Number)) ||
+                (entry["pars"] != null && !(entry["pars"] instanceof Lang.Number)) ||
                 entry["holes"] > 18 || !(entry["count"] instanceof Lang.Number) ||
                 (entry["count"] != 9 && entry["count"] != 18) ||
                 !(entry["file"] instanceof Lang.String) ||
@@ -118,6 +119,7 @@ class GolfCourseData {
             result.add({ "id" => entry["id"], "type" => entry["type"],
                 "name" => entry["name"], "lat" => entry["lat"], "lon" => entry["lon"],
                 "holes" => entry["holes"], "greens" => entry["greens"] == null ? 0 : entry["greens"],
+                "pars" => entry["pars"] == null ? 0 : entry["pars"],
                 "count" => entry["count"], "file" => entry["file"] });
         }
         return result;
@@ -208,6 +210,23 @@ class GolfCourseData {
         return hole;
     }
 
+    // Pares de la tarjeta oficial (hasta 18, 3-6) o null si la ficha no la trae.
+    function scorecardPars(data, count) {
+        if (!(data instanceof Lang.Dictionary) || !(data["pars"] instanceof Lang.Array) ||
+            data["pars"].size() != count) {
+            return null;
+        }
+        var result = [];
+        for (var index = 0; index < 18; index += 1) {
+            var par = index < count ? data["pars"][index] : null;
+            if (par != null && (!(par instanceof Lang.Number) || par < 3 || par > 6)) {
+                return null;
+            }
+            result.add(par);
+        }
+        return result;
+    }
+
     // Greens sin numerar de la ficha; sirven para "green cercano" y para aprender el campo.
     function looseGreens(data) {
         var result = [];
@@ -269,6 +288,10 @@ class GolfCourseData {
                 return false;
             }
             found = true;
+        }
+        var pars = course["pars"];
+        if (pars != null && (!(pars instanceof Lang.Array) || pars.size() != 18)) {
+            return false;
         }
         var greens = course["greens"];
         if (greens != null) {

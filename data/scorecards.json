@@ -1,0 +1,23 @@
+{
+    "description": "Tarjetas oficiales (pares por hoyo) para campos cuyo OSM no tiene pares. El generador las mezcla con OSM; los pares de OSM tienen prioridad.",
+    "courses": {
+        "way/55617277": {
+            "name": "La Junquera",
+            "count": 9,
+            "pars": [3, 4, 4, 4, 3, 4, 3, 3, 4],
+            "source": "https://pretiumgolf.com/campo-de-golf-la-junquera/"
+        },
+        "way/56205383": {
+            "name": "Abra del Pas",
+            "count": 18,
+            "pars": [5, 3, 4, 3, 4, 3, 4, 4, 4, 3, 4, 5, 4, 3, 5, 3, 4, 5],
+            "source": "https://www.allsquaregolf.com/golf-courses/spain/campo-de-golf-abra-del-pas (coincide con RFEG)"
+        },
+        "way/69995736": {
+            "name": "Nestares",
+            "count": 18,
+            "pars": [5, 3, 4, 4, 3, 4, 4, 5, 4, 3, 4, 4, 5, 4, 3, 4, 4, 5],
+            "source": "https://www.galaxiagolf.com/campos/cantabria/nestares.html (coincide con golfingrecord.com)"
+        }
+    }
+}

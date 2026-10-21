@@ -594,3 +594,31 @@ function testCourseLearnsGreensAndTees(logger) {
     Test.assert(service.learnGreen(1, null) && service.course["holes"][1]["lat"] < 40.4501);
     return true;
 }
+
+(:test)
+function testScorecardParsFillCourseWithoutHoles(logger) {
+    var service = new GolfCourses();
+    var controller = new GolfTestCourseController();
+    service.controller = controller;
+    service.busy = true;
+    service.staticRequest = true;
+    service.phase = :detail;
+    service.requestId = 12;
+    var holes = [];
+    for (var index = 0; index < 18; index += 1) {
+        holes.add(null);
+    }
+    service.draft = { "id" => "way/55617277", "type" => "way", "name" => "La Junquera",
+        "source" => "osm", "count" => 9, "holes" => holes, "greens" => [] };
+    service.onResponse(200, { "id" => "way/55617277", "license" => "ODbL-1.0", "elements" => [],
+        "pars" => [3, 4, 4, 4, 3, 4, 3, 3, 4] }, 12);
+    Test.assert(!service.busy && service.course["pars"][1] == 4 && service.course["pars"][9] == null);
+    Test.assert(controller.round.holeCount == 9 && controller.round.pars[0] == 3 && controller.round.pars[8] == 4);
+    Test.assert(service.parser.validCachedCourse(service.course));
+    Test.assert(service.parser.scorecardPars({ "pars" => [3, 4] }, 9) == null);
+    Test.assert(service.parser.scorecardPars({ "pars" => [3, 4, 4, 4, 3, 4, 3, 3, 9] }, 9) == null);
+    service.useFavorite(0);
+    Test.assert(controller.round.pars[0] == 3 && controller.round.total() == 0);
+    service.stopGps();
+    return true;
+}

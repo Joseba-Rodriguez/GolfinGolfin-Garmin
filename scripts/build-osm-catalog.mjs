@@ -226,7 +226,12 @@ function tileName(lat, lon) {
     return `lat_${lat}_lon_${lon}.json`;
 }
 
-export function buildCatalog(features, generatedAt = new Date().toISOString()) {
+function validScorecard(card) {
+    return card && (card.count === 9 || card.count === 18) && Array.isArray(card.pars) &&
+        card.pars.length === card.count && card.pars.every((par) => Number.isInteger(par) && par >= 3 && par <= 6);
+}
+
+export function buildCatalog(features, generatedAt = new Date().toISOString(), scorecards = {}) {
     const courses = [];
     const courseIds = new Map();
     const holes = [];
@@ -398,9 +403,15 @@ export function buildCatalog(features, generatedAt = new Date().toISOString()) {
         const tileLon = Math.floor(lon);
         const references = [...course.holes.keys()].sort((left, right) => Number(left) - Number(right));
         const file = `courses/${course.type}_${course.osmId}.json`;
-        course.roundCount = courseRoundCount(course.tags, references.length);
+        const card = validScorecard(scorecards[course.id]) ? scorecards[course.id] : null;
+        course.roundCount = card ? card.count : courseRoundCount(course.tags, references.length);
+        const cardPar = (reference) => {
+            const position = card ? (card.count === 9 && Number(reference) > 9 ? Number(reference) - 10 : Number(reference) - 1) : -1;
+            return card && position >= 0 && position < card.count ? String(card.pars[position]) : null;
+        };
         const entries = references.map((reference) => {
             const hole = course.holes.get(reference);
+            const par = parsePar(hole.tags.par) ?? cardPar(reference);
             mappedHoles += 1;
             const center = hole.green?.center ?? hole.target;
             return {
@@ -409,7 +420,7 @@ export function buildCatalog(features, generatedAt = new Date().toISOString()) {
                 tags: {
                     golf: "hole",
                     ref: reference,
-                    ...(parsePar(hole.tags.par) ? { par: parsePar(hole.tags.par) } : {})
+                    ...(par ? { par } : {})
                 },
                 geometry: hole.coordinates.length > 1 ? [point(hole.coordinates[0]), point(center)] : [point(center)],
                 ...(hole.green?.front ? { front: point(hole.green.front), back: point(hole.green.back) } : {})
@@ -427,7 +438,8 @@ export function buildCatalog(features, generatedAt = new Date().toISOString()) {
             attribution: "© OpenStreetMap contributors",
             license: "ODbL-1.0",
             elements: entries,
-            ...(looseGreens.length ? { greens: looseGreens } : {})
+            ...(looseGreens.length ? { greens: looseGreens } : {}),
+            ...(card ? { pars: card.pars, scorecard: card.source } : {})
         });
         const summary = {
             id: course.id,
@@ -437,6 +449,7 @@ export function buildCatalog(features, generatedAt = new Date().toISOString()) {
             lon,
             holes: references.length,
             greens: looseGreens.length,
+            ...(card ? { pars: 1 } : {}),
             count: course.roundCount,
             file
         };
@@ -555,7 +568,7 @@ function main() {
     if (args.geojson) {
         const features = args.geojson.split(",").flatMap((file) =>
             JSON.parse(fs.readFileSync(path.resolve(file), "utf8")).features);
-        writeCatalog(buildCatalog(features), path.resolve(args.output));
+        writeCatalog(buildCatalog(features, undefined, readScorecards(args)), path.resolve(args.output));
         return;
     }
     const pbfPaths = [args.spain, args.canary].map((file) => path.resolve(file));
@@ -574,7 +587,17 @@ function main() {
         console.log(`Extracting golf features from ${pbfPath}`);
         features.push(...extractFeatures(osmium, pbfPath, workRoot));
     }
-    writeCatalog(buildCatalog(features), outputRoot);
+    writeCatalog(buildCatalog(features, undefined, readScorecards(args)), outputRoot);
+}
+
+// Tarjetas oficiales opcionales: data/scorecards.json por defecto.
+function readScorecards(args) {
+    const file = path.resolve(args.scorecards ?? path.join(path.dirname(new URL(import.meta.url).pathname
+        .replace(/^\/([A-Za-z]:)/, "$1")), "..", "data", "scorecards.json"));
+    if (!fs.existsSync(file)) {
+        return {};
+    }
+    return JSON.parse(fs.readFileSync(file, "utf8")).courses ?? {};
 }
 
 function writeCatalog(result, outputRoot) {

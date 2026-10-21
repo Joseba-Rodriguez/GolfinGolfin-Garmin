@@ -340,6 +340,10 @@ class GolfCourses {
                 return;
             }
             draft["greens"] = parser.looseGreens(data);
+            var cardPars = parser.scorecardPars(data, draft["count"]);
+            if (cardPars != null) {
+                draft["pars"] = cardPars;
+            }
             numbers = parser.holeNumbers(data);
             if (numbers.size() == 0 && data["elements"].size() > 0) {
                 fail("Ficha sin hoyos validos");
@@ -364,11 +368,12 @@ class GolfCourses {
     function completeDownload() {
         var freshRound = new GolfRound();
         freshRound.holeCount = draft["count"];
+        var savedCourse = course;
+        course = draft;
         for (var holeIndex = 0; holeIndex < 18; holeIndex += 1) {
-            if (draft["holes"][holeIndex] != null) {
-                freshRound.pars[holeIndex] = draft["holes"][holeIndex]["par"];
-            }
+            freshRound.pars[holeIndex] = coursePar(holeIndex);
         }
+        course = savedCourse;
         var updatedFavorites = favoritesIncluding(draft, replacementFavorite);
         if (updatedFavorites == null) {
             fail("Biblioteca llena");
@@ -414,6 +419,9 @@ class GolfCourses {
         var mapped = candidate["holes"];
         if (mapped > 0) {
             return mapped.toString() + "/" + candidate["count"].toString() + " hoyos GPS";
+        }
+        if (candidate["pars"] instanceof Lang.Number && candidate["pars"] > 0) {
+            return candidate["count"].toString() + " hoyos, pares / aprende";
         }
         return candidate["greens"] instanceof Lang.Number && candidate["greens"] > 0 ?
             candidate["greens"].toString() + " greens" : "aprende al jugar";
@@ -658,11 +666,20 @@ class GolfCourses {
         return parser.distanceMeters({ "lat" => target["tlat"], "lon" => target["tlon"] }, target);
     }
 
+    // Par del hoyo: OSM primero, despues la tarjeta oficial del catalogo.
+    function coursePar(holeIndex) {
+        var hole = currentHole(holeIndex);
+        if (hole != null && hole["par"] != null) {
+            return hole["par"];
+        }
+        var pars = course == null ? null : course["pars"];
+        return pars instanceof Lang.Array && holeIndex < pars.size() ? pars[holeIndex] : null;
+    }
+
     function applyPars(round, overwrite) {
         for (var index = 0; index < 18; index += 1) {
-            var hole = currentHole(index);
             if (overwrite || round.pars[index] == null) {
-                round.pars[index] = hole == null ? null : hole["par"];
+                round.pars[index] = coursePar(index);
             }
         }
     }
@@ -759,10 +776,12 @@ class GolfCourses {
         var choice = favorites[index];
         var freshRound = new GolfRound();
         freshRound.holeCount = choice["count"];
+        var savedCourse = course;
+        course = choice;
         for (var holeIndex = 0; holeIndex < 18; holeIndex += 1) {
-            var hole = choice["holes"][holeIndex];
-            freshRound.pars[holeIndex] = hole == null ? null : hole["par"];
+            freshRound.pars[holeIndex] = coursePar(holeIndex);
         }
+        course = savedCourse;
         try {
             Application.Storage.setValue("session-v2", { "round" => freshRound.snapshot(), "course" => choice,
                 "favorites" => favorites, "yards" => yards });

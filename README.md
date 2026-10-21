@@ -139,6 +139,8 @@ Fuente: extractos de **OpenStreetMap contributors**, bajo **ODbL 1.0**.
 El generador crea mosaicos geograficos pequenos y una ficha JSON por campo. Usa campos
 cerrados y multipoligonos, lineas golf=hole numeradas (con tolerancia de 150 m al limite),
 banderas, greens y tees numerados, y contornos de green para frente/centro/fondo.
+Las tarjetas oficiales de data/scorecards.json (pares y 9/18 hoyos) se mezclan con OSM para
+campos sin pares mapeados; cita la fuente de cada tarjeta.
 Para regenerar sin volver a filtrar los PBF: node scripts/build-osm-catalog.mjs --geojson a.geojson,b.geojson --output data/osm/spain La
 app obtiene estos archivos de jsDelivr (`cdn.jsdelivr.net/gh/...@main`), que sirve este repositorio
 publico con `Content-Type: application/json`. GitHub Raw responde `text/plain` y

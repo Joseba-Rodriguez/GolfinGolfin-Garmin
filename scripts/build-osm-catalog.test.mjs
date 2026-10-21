@@ -61,6 +61,17 @@ test("does not attach a hole outside the course boundary or accept unnumbered ho
     assert.equal(outputs.get("courses/way_10.json").elements.length, 0);
 });
 
+test("merges official scorecard pars and hole count", () => {
+    const card = { "way/10": { count: 9, pars: [3, 4, 4, 4, 3, 4, 3, 3, 5], source: "test" } };
+    const noPar = structuredClone(hole);
+    delete noPar.properties.par;
+    const { outputs } = buildCatalog([course, noPar], "2026-10-21", card);
+    const detail = outputs.get("courses/way_10.json");
+    assert.deepEqual(detail.pars, [3, 4, 4, 4, 3, 4, 3, 3, 5]);
+    assert.equal(detail.elements[0].tags.par, "3");
+    assert.equal(outputs.get("tiles/lat_40_lon_-4.json").courses[0].pars, 1);
+});
+
 test("reads osmium multipolygon courses and adds green front/back and numbered pins", () => {
     const relationCourse = structuredClone(course);
     relationCourse.properties["@id"] = "a61";
